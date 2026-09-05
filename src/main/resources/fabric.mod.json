@@ -1,0 +1,51 @@
+{
+	"schemaVersion": 1,
+	"id": "turneler",
+	"version": "${version}",
+	"name": "Turneler",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/turneler/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			{
+				"value": "adreno.turneler.Turneler",
+				"adapter": "kotlin"
+			}
+		],
+		"client": [
+			{
+				"value": "adreno.turneler.client.TurnelerClient",
+				"adapter": "kotlin"
+			}
+		],
+		"fabric-datagen": [
+			{
+				"value": "adreno.turneler.client.TurnelerDataGenerator",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"turneler.mixins.json",
+		{
+			"config": "turneler.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	}
+}
