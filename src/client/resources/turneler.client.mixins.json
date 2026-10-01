@@ -3,7 +3,7 @@
 	"package": "adreno.turneler.client.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
-		"ExampleClientMixin"
+		"BoatControlMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

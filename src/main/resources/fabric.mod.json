@@ -3,9 +3,9 @@
 	"id": "turneler",
 	"version": "${version}",
 	"name": "Turneler",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Automatic ice-boat piloting with a configurable trajectory preview.",
 	"authors": [
-		"Me!"
+		"Adreno"
 	],
 	"contact": {
 		"homepage": "https://fabricmc.net/",
