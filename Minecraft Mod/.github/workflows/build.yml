@@ -6,10 +6,6 @@
 name: build
 on: [pull_request, push]
 
-defaults:
-  run:
-    working-directory: Minecraft Mod
-
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -31,4 +27,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Artifacts
-          path: Minecraft Mod/build/libs/
+          path: build/libs/
