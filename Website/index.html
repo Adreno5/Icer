@@ -1,0 +1,3429 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>冰面编辑器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      font-size: 12px;
+      --bg: #1e1e1e;
+      --panel: #252526;
+      --raised: #2d2d30;
+      --border: #454545;
+      --text: #d4d4d4;
+      --muted: #9da0a4;
+      --accent: #007acc;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text); }
+    button, input, select { font: inherit; }
+    button, select, input[type="number"] {
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--raised);
+      color: var(--text);
+    }
+    button { padding: 0 10px; cursor: pointer; white-space: nowrap; }
+    button:hover, select:hover { background: #383838; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 1px solid #75beff; outline-offset: 1px; }
+    button.active, button[aria-pressed="true"] { background: #094771; border-color: #007acc; color: #fff; }
+    button:disabled { opacity: .45; cursor: default; }
+    select { min-width: 82px; padding: 0 6px; cursor: pointer; }
+    input[type="number"] { width: 58px; padding: 0 6px; }
+    #width { width: 86px; }
+    #field { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+    #field[data-tool="select"] { cursor: default; }
+    #field[data-tool="spawn"] { cursor: crosshair; }
+    #field[data-tool="route"] { cursor: crosshair; }
+    #field.panning { cursor: grabbing; }
+    body.drive #field { cursor: default; }
+    body.drive .editor-only { display: none; }
+    body:not(.drive) .drive-only { display: none; }
+    .toolbar {
+      position: fixed; z-index: 2; top: 12px; left: 12px; right: 12px;
+      display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px;
+      pointer-events: none;
+    }
+    .group {
+      display: flex; align-items: center; gap: 4px; min-height: 38px;
+      padding: 4px; border: 1px solid #3f3f46; background: var(--panel);
+      box-shadow: 0 2px 8px #0005; pointer-events: auto;
+    }
+    .group button { min-width: 30px; }
+    .group .number-field { display: flex; align-items: center; gap: 5px; padding: 0 5px; color: var(--muted); white-space: nowrap; }
+    .spacer { flex: 1; min-width: 0; }
+    .key { width: 26px; padding: 0; }
+    #drive-keys {
+      position: fixed; z-index: 2; right: 12px; bottom: 12px;
+      display: none; grid-template-columns: repeat(3, 32px); gap: 4px;
+      padding: 7px; border: 1px solid #3f3f46; background: var(--panel);
+      box-shadow: 0 2px 8px #0005; pointer-events: none;
+    }
+    body.drive #drive-keys { display: grid; }
+    #drive-keys .key { width: 32px; height: 30px; text-align: center; line-height: 28px; border: 1px solid var(--border); background: var(--raised); color: var(--muted); }
+    #drive-keys .key.down { background: #094771; border-color: #007acc; color: #fff; }
+    #drive-keys .w { grid-column: 2; }
+    #drive-keys .a { grid-column: 1; grid-row: 2; }
+    #drive-keys .s { grid-column: 2; grid-row: 2; }
+    #drive-keys .d { grid-column: 3; grid-row: 2; }
+    #stage { display: none; min-width: 40px; text-align: center; color: #9cdcfe; font-variant-numeric: tabular-nums; }
+    #stage.visible { display: inline-block; }
+    .status {
+      position: fixed; z-index: 2; left: 12px; right: 12px; bottom: 12px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0;
+      min-height: 37px; width: max-content; max-width: calc(100% - 24px);
+      border: 1px solid #3f3f46; background: var(--panel);
+      box-shadow: 0 2px 8px #0005; pointer-events: none;
+    }
+    .metric { display: flex; align-items: baseline; gap: 7px; padding: 9px 12px; border-right: 1px solid #3b3b3b; white-space: nowrap; }
+    .metric:last-child { border-right: 0; }
+    .metric span { color: var(--muted); }
+    .metric strong { font-weight: 600; font-variant-numeric: tabular-nums; color: #dcdcdc; }
+    #sequence-panel {
+      position: fixed; z-index: 3; top: 62px; right: 12px; width: 430px;
+      max-width: calc(100vw - 24px); height: min(740px, calc(100vh - 130px)); min-height: 260px;
+      display: flex; flex-direction: column; overflow: hidden;
+      border: 1px solid #4a4a4a; background: var(--panel); box-shadow: 0 6px 18px #0008;
+    }
+    #sequence-panel[hidden] { display: none; }
+    .panel-head { flex: none; display: flex; align-items: center; gap: 5px; padding: 6px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .panel-head b { flex: 1; padding-left: 5px; font-weight: 600; }
+    .sequence-edit { flex: none; display: grid; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
+    .sequence-edit-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    #sequence-selected { min-width: 72px; color: #9cdcfe; font-variant-numeric: tabular-nums; }
+    .sequence-duration-label { display: flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
+    #sequence-duration { width: 82px; font-variant-numeric: tabular-nums; }
+    #sequence-remove { margin-left: auto; }
+    .sequence-edit-keys { display: flex; gap: 4px; }
+    .sequence-edit-keys .key { width: 42px; }
+    .sequence-lane-head { flex: none; display: grid; grid-template-columns: 52px repeat(4, 1fr); height: 28px; border-bottom: 1px solid var(--border); background: #202022; }
+    .sequence-lane-head span { display: grid; place-items: center; border-right: 1px solid #383838; color: var(--muted); font-weight: 600; }
+    .sequence-lane-head span:last-child { border-right: 0; }
+    #sequence-timeline { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; background: #1e1e1e; }
+    #sequence-timeline.dragging { cursor: grabbing; }
+    #sequence-canvas { display: block; width: 100%; height: 100%; }
+    #sequence-playhead { position: absolute; z-index: 1; top: 50%; left: 0; right: 0; height: 0; border-top: 1px solid #e06c75; pointer-events: none; }
+    #sequence-time-value { position: absolute; top: 0; left: 0; width: 52px; height: 22px; transform: translateY(-50%); display: grid; place-items: center; color: #f0a0a6; background: #252526; border-right: 1px solid #e06c75; font-variant-numeric: tabular-nums; }
+    #toast { position: fixed; z-index: 4; right: 12px; bottom: 58px; padding: 8px 12px; border: 1px solid #555; background: var(--panel); box-shadow: 0 2px 8px #0008; }
+    #toast[hidden] { display: none; }
+    #information-panel {
+      position: fixed; z-index: 3; width: 218px; max-width: calc(100vw - 24px);
+      max-height: calc(100vh - 150px); overflow-y: auto;
+      padding: 5px; border: 1px solid var(--border); background: var(--panel);
+      box-shadow: 0 4px 12px #0006;
+    }
+    #information-panel[hidden] { display: none; }
+    body.ui-hidden > :not(#field):not(.toolbar):not(script) { display: none !important; }
+    body.ui-hidden .toolbar > :not(.play-group),
+    body.ui-hidden .play-group > :not(#play) { display: none !important; }
+    body.ui-hidden .play-group { padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; }
+    .information-option { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 6px; cursor: pointer; }
+    .information-option:hover { background: var(--raised); }
+    .information-option input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .information-swatch { width: 17px; height: 3px; background: var(--ink); flex: none; }
+    .information-option:nth-child(5) { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 7px; }
+    .information-option:nth-child(9) { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 7px; }
+    @media (max-width: 850px) {
+      .spacer { display: none; }
+      .toolbar { right: 8px; left: 8px; top: 8px; gap: 4px; }
+      .group { min-height: 36px; }
+      .group button { padding: 0 7px; }
+      #sequence-panel { top: 112px; right: 8px; height: min(740px, calc(100vh - 180px)); }
+      .status { left: 8px; bottom: 8px; max-width: calc(100% - 16px); }
+      .metric { padding: 7px 8px; }
+      #drive-keys { right: 8px; bottom: 72px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="field" tabindex="-1" aria-label="冰面地图"></canvas>
+  <div class="toolbar">
+    <div class="group"><button id="mode-toggle" title="从当前船状态开始操纵并录制；原序列可撤销恢复">操纵</button><button id="record-toggle" class="drive-only" title="开始新录制或停止录制，R">录制中</button></div>
+    <div class="group editor-only" role="toolbar" aria-label="编辑工具">
+      <button data-tool="paint" title="绘制冰面" aria-pressed="true">绘制</button>
+      <button data-tool="erase" title="擦除为普通地面" aria-pressed="false">擦除</button>
+      <button data-tool="bezier" title="钢笔：单击锚点，拖动设置切线；双击结束当前冰面" aria-pressed="false">贝塞尔</button>
+      <button data-tool="route" title="钢笔：单击锚点，拖动设置切线；自动连接后续路线" aria-pressed="false">路线</button>
+      <button data-tool="select" title="选择并拖动曲线或控制点" aria-pressed="false">选择</button>
+      <button data-tool="spawn" title="拖拽设置船位和朝向" aria-pressed="false">船位</button>
+      <span id="stage"></span>
+    </div>
+    <div class="group editor-only">
+      <select id="material" aria-label="冰面材质">
+        <option value="blue">蓝冰</option>
+        <option value="packed">浮冰</option>
+        <option value="ice">普通冰</option>
+      </select>
+      <label class="number-field">宽 <input id="width" type="number" min="1" step="1" value="3" aria-label="铺设宽度，方块"></label>
+      <button id="undo" title="撤销 Ctrl+Z">撤销</button>
+      <button id="redo" title="重做 Ctrl+Y">重做</button>
+      <button id="clear" title="清空冰面和曲线">清空</button>
+    </div>
+    <div class="group play-group">
+      <button id="play" title="运行或暂停，空格；F1 隐藏 / 显示界面">运行</button>
+      <button id="step" title="前进 0.2 tick（0.01 秒）">+0.2t</button>
+      <button id="reset" title="船回到起点">复位</button>
+      <select id="rate" aria-label="播放速度">
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+        <option value="8">8×</option>
+      </select>
+      <button id="sequence-toggle" class="editor-only" title="编辑按键输入序列" aria-expanded="false">序列</button>
+      <button id="follow" class="editor-only" title="运行时镜头跟随船" aria-pressed="false">跟随</button>
+      <button id="center" title="镜头移到船位">居中</button>
+    </div>
+    <div class="group editor-only">
+      <button id="route-calculate" title="边开船边按船速向前生成居中路径">自动+路径</button>
+      <button id="auto-run" title="从路线起点运行逆动力学控制，并记录按键序列">自动</button>
+      <button id="route-clear" title="清空手绘路线">删路线</button>
+    </div>
+    <div class="group">
+      <button id="information-toggle" aria-pressed="false" aria-expanded="false" aria-controls="information-panel" title="总控 B 点的图形信息；每项可独立开启">显示更多信息</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group editor-only">
+      <button id="export" title="导出地图、曲线、船状态和输入序列">导出 JSON</button>
+      <button id="import" title="导入 JSON">导入 JSON</button>
+      <input id="file" type="file" accept="application/json,.json" hidden>
+    </div>
+  </div>
+  <aside id="information-panel" aria-label="图形信息开关" hidden>
+    <label class="information-option" title="在 B 点平移显示 P 点切线；黄色切线与红色移动方向之间的扇形表示夹角。静止时不显示移动方向。"><input type="checkbox" data-information="direction" checked><span class="information-swatch" style="--ink:#dcdcaa" aria-hidden="true"></span>移动方向 / P 切线</label>
+    <label class="information-option" title="青色船头与红色移动方向之间的内层扇形表示侧滑角。"><input type="checkbox" data-information="slip"><span class="information-swatch" style="--ink:#58c4dd" aria-hidden="true"></span>船头 / 移动方向</label>
+    <label class="information-option" title="按 P 点切线分解当前世界速度；黄色为切向分量，紫色为法向分量，虚线构成向量平行四边形。"><input type="checkbox" data-information="velocity"><span class="information-swatch" style="--ink:#c8a0d0" aria-hidden="true"></span>速度分解</label>
+    <label class="information-option" title="船底接触范围与冰面边缘；橙色法向箭头表示以 0.04 侧向推力消除横向速度所需的距离。"><input type="checkbox" data-information="clearance"><span class="information-swatch" style="--ink:#ce9178" aria-hidden="true"></span>船体 / 侧向停止距离</label>
+    <label class="information-option" title="自动模式：紫色是求解推力，青色是下一 tick 实际按键推力，虚线分解切向和法向；圆表示 W 的 0.04 推力幅值。"><input type="checkbox" data-information="thrust" checked><span class="information-swatch" style="--ink:#c586c0" aria-hidden="true"></span>目标 / 实际推力</label>
+    <label class="information-option" title="自动模式：每根细箭头是转向预测中一 tick 的 W 推力。阶梯图绿色为累计可用侧向推力，橙色为累计需求；底部填充比例为最终 W 占空比，细竖线为累计求解占空比。"><input type="checkbox" data-information="cumulative" checked><span class="information-swatch" style="--ink:#b5cea8" aria-hidden="true"></span>累计 W 求解过程</label>
+    <label class="information-option" title="自动模式：散点是实际搜索过的纵向推力及代价，颜色由暗到亮表示搜索先后；底部两排区间显示两支黄金分割搜索的收敛，紫色菱形是最优 W 候选。"><input type="checkbox" data-information="search"><span class="information-swatch" style="--ink:#d7ba7d" aria-hidden="true"></span>候选解 / 搜索收敛</label>
+    <label class="information-option" title="自动模式：青色弧线和端点表示求解器转向预测中的逐 tick 船头，灰色虚线表示完全释放按键后的角速度衰减。"><input type="checkbox" data-information="rotation"><span class="information-swatch" style="--ink:#9cdcfe" aria-hidden="true"></span>转向 / 旋转惯性</label>
+    <label class="information-option" title="粉色垂线连接 B 与路线最近投影点，直角标记表示法向偏差，短虚线是该处路线切线。"><input type="checkbox" data-information="projection"><span class="information-swatch" style="--ink:#e695b8" aria-hidden="true"></span>路线投影 / 横向偏差</label>
+    <label class="information-option" title="黄色虚线将路线局部曲率平移到 B 点；法向箭头表示 v沿线² × 曲率的侧向推力需求，绿色表示不超过 W 的 0.04 能力，红色表示超过。两侧短刻线表示 0.04。"><input type="checkbox" data-information="curvature"><span class="information-swatch" style="--ink:#e5c07b" aria-hidden="true"></span>路线曲率 / 转弯需求</label>
+    <label class="information-option" title="沿 B-P 弦线显示 16 处船体冰面采样：绿色为船底全部接触冰，红色为触及普通地面；四个方框表示实际船体覆盖范围。离散采样用于观察局部接触情况。"><input type="checkbox" data-information="chord"><span class="information-swatch" style="--ink:#98c379" aria-hidden="true"></span>B-P 弦线 / 冰面采样</label>
+    <label class="information-option" title="高亮船底实际接触的方块：蓝色为蓝冰，绿色为浮冰，浅蓝为普通冰，红色为普通地面。内环按接触方块数显示材质比例，外环填充表示当前速度和角速保留系数。"><input type="checkbox" data-information="contacts"><span class="information-swatch" style="--ink:#4ec9b0" aria-hidden="true"></span>接触方块 / 摩擦</label>
+    <label class="information-option" title="从 B 点绘制一 tick 速度合成：红色是当前速度，灰色是阻尼后速度，青色是下一 tick 速度；橙色连接表示阻尼损失，绿色连接表示实际按键推力。所有向量使用同一比例。"><input type="checkbox" data-information="acceleration"><span class="information-swatch" style="--ink:#d19a66" aria-hidden="true"></span>阻尼 / 速度更新</label>
+    <label class="information-option" title="从当前真实 tick 状态释放全部按键，按实际地面摩擦预测未来 24 tick。轨迹点间距显示减速，终点箭头显示仍在衰减的船头旋转；绿色为全船体在冰上，红色为接触普通地面。"><input type="checkbox" data-information="coast"><span class="information-swatch" style="--ink:#7ec8c8" aria-hidden="true"></span>释放按键 / 滑行预测</label>
+  </aside>
+  <aside id="sequence-panel" hidden>
+    <div class="panel-head">
+      <b>输入序列 · 0.2 tick</b>
+      <button id="sequence-add" title="添加一段">添加</button>
+      <button id="sequence-run" title="从序列起点运行">执行</button>
+      <button id="sequence-close" aria-label="关闭输入序列">关闭</button>
+    </div>
+    <div class="sequence-edit">
+      <div class="sequence-edit-line">
+        <span id="sequence-selected"></span>
+        <label class="sequence-duration-label">持续 <input id="sequence-duration" type="number" min="0.2" max="100000" step="0.2" aria-label="选中段持续 tick 数"> tick</label>
+        <button id="sequence-remove" title="删除选中段">删除</button>
+      </div>
+      <div class="sequence-edit-keys" aria-label="选中段按键状态">
+        <button class="key" data-sequence-key="w" aria-pressed="false">W</button>
+        <button class="key" data-sequence-key="a" aria-pressed="false">A</button>
+        <button class="key" data-sequence-key="s" aria-pressed="false">S</button>
+        <button class="key" data-sequence-key="d" aria-pressed="false">D</button>
+      </div>
+    </div>
+    <div class="sequence-lane-head" aria-hidden="true"><span>tick</span><span>W</span><span>A</span><span>S</span><span>D</span></div>
+    <div id="sequence-timeline" title="拖拽移动时间线，滚轮缩放；点击选择段">
+      <canvas id="sequence-canvas" aria-label="W A S D 按键时间线"></canvas>
+      <div id="sequence-playhead"><span id="sequence-time-value">0.0</span></div>
+    </div>
+  </aside>
+  <div class="status" aria-live="off">
+    <div class="metric"><span>Tick</span><strong id="m-tick">0</strong></div>
+    <div class="metric"><span>X / Z</span><strong id="m-pos">0.00 / 0.00</strong></div>
+    <div class="metric"><span>速度</span><strong id="m-speed">0.000</strong></div>
+    <div class="metric"><span>偏航</span><strong id="m-slip">0.0°</strong></div>
+    <div class="metric"><span>船头</span><strong id="m-yaw">0.0°</strong></div>
+    <div class="metric"><span>角速</span><strong id="m-omega">0.00°/t</strong></div>
+    <div class="metric"><span>摩擦</span><strong id="m-friction">0.989</strong></div>
+    <div class="metric"><span>输入</span><strong id="m-input">—</strong></div>
+    <div class="metric"><span>p 进度</span><strong id="m-route-progress">—</strong></div>
+    <div class="metric"><span>b-p</span><strong id="m-route-error">—</strong></div>
+    <div class="metric"><span>W 占空</span><strong id="m-route-demand">—</strong></div>
+    <div class="metric"><span>目标角</span><strong id="m-route-heading">—</strong></div>
+  </div>
+  <div id="drive-keys" aria-hidden="true"><span class="key w">W</span><span class="key a">A</span><span class="key s">S</span><span class="key d">D</span></div>
+  <div id="toast" hidden></div>
+
+  <script id="physics">
+    (() => {
+      'use strict';
+      const F32 = Math.fround;
+      const FRICTION = Object.freeze({ ground: F32(0.6), ice: F32(0.98), packed: F32(0.98), blue: F32(0.989) });
+      const SIN_SCALE = 10430.378350470453;
+      const DEG_TO_RAD_F = F32(Math.PI / 180);
+      const HALF_WIDTH = 1.375 / 2;
+      const SIN = new Float32Array(65536);
+      for (let i = 0; i < SIN.length; i++) SIN[i] = F32(Math.sin(i / SIN_SCALE));
+      function mcSin(angle) { return SIN[Math.trunc(angle * SIN_SCALE) & 65535]; }
+      function mcCos(angle) { return SIN[Math.trunc(angle * SIN_SCALE + 16384) & 65535]; }
+
+      // Flat, full-cube blocks at one height: intersect the 1.375-block-wide hull-bottom slice.
+      // Minecraft counts touched block shapes once each; it does not weight by overlap area.
+      function frictionAt(x, z, terrainAt) {
+        const x0 = Math.floor(x - HALF_WIDTH);
+        const x1 = Math.ceil(x + HALF_WIDTH);
+        const z0 = Math.floor(z - HALF_WIDTH);
+        const z1 = Math.ceil(z + HALF_WIDTH);
+        let sum = F32(0);
+        let count = 0;
+        for (let bx = x0; bx < x1; bx++) {
+          if (bx + 1 <= x - HALF_WIDTH || bx >= x + HALF_WIDTH) continue;
+          for (let bz = z0; bz < z1; bz++) {
+            if (bz + 1 <= z - HALF_WIDTH || bz >= z + HALF_WIDTH) continue;
+            sum = F32(sum + (FRICTION[terrainAt(bx, bz)] ?? FRICTION.ground));
+            count++;
+          }
+        }
+        return F32(sum / count);
+      }
+
+      // One locally-controlled ON_LAND tick: status sample -> floatBoat -> controlBoat -> move.
+      // x/z and velocity stay double precision; yaw and deltaRotation follow vanilla float fields.
+      function step(state, keys, terrainAt) {
+        const friction = frictionAt(state.x, state.z, terrainAt);
+        let vx = state.vx * friction;
+        let vz = state.vz * friction;
+        let omega = F32(F32(state.omega) * friction);
+        if (keys.a) omega = F32(omega - 1);
+        if (keys.d) omega = F32(omega + 1);
+        const yaw = F32(F32(state.yaw) + omega);
+        let acceleration = F32(0);
+        if (keys.a !== keys.d && !keys.w && !keys.s) acceleration = F32(acceleration + F32(0.005));
+        if (keys.w) acceleration = F32(acceleration + F32(0.04));
+        if (keys.s) acceleration = F32(acceleration - F32(0.005));
+        const angle = F32(yaw * DEG_TO_RAD_F);
+        vx += mcSin(-angle) * acceleration;
+        vz += mcCos(angle) * acceleration;
+        return { x: state.x + vx, z: state.z + vz, vx, vz, yaw, omega, tick: state.tick + 1, friction };
+      }
+
+      globalThis.IceBoatPhysics26_2 = Object.freeze({ step, frictionAt, FRICTION, HALF_WIDTH, mcSin, mcCos });
+    })();
+  </script>
+  <script>
+    (() => {
+      'use strict';
+      const physics = globalThis.IceBoatPhysics26_2;
+      const canvas = document.getElementById('field');
+      const ctx = canvas.getContext('2d');
+      const $ = id => document.getElementById(id);
+      const sequenceCanvas = $('sequence-canvas');
+      const sequenceCtx = sequenceCanvas.getContext('2d');
+      const COLORS = { ice: '#48626c', packed: '#355362', blue: '#24516a' };
+      const MATERIALS = new Set(['ice', 'packed', 'blue']);
+      const EMPTY_KEYS = Object.freeze({ w: false, a: false, s: false, d: false });
+      const SEQUENCE_KEYS = ['w', 'a', 's', 'd'];
+      const TIMELINE_GUTTER = 52;
+      const MAX_SEQUENCE_ROWS = 5000;
+      const MAX_ROW_UNITS = 500000;
+      const SUBTICKS_PER_TICK = 5;
+      const tileKey = (x, z) => `${x},${z}`;
+      const finite = n => typeof n === 'number' && Number.isFinite(n);
+      const copy = value => JSON.parse(JSON.stringify(value));
+      const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+      let tiles = new Map();
+      for (let x = -6; x <= 6; x++) for (let z = -6; z <= 6; z++) tiles.set(tileKey(x,z), 'blue');
+      let curves = [];
+      let curveLayers = [];
+      let curveTileCache = new Map();
+      let nextCurveId = 1;
+      let routes = [];
+      let livePath = null;
+      let routeSamples = [];
+      let routeSegments = [];
+      let routeJoints = [];
+      let routeLength = 0;
+      let routeWidthCache = new Map();
+      let nextRouteId = 1;
+      let selectedRouteId = null;
+      let penRoute = null;
+      let spawn = { x: 0, z: 0, yaw: 180 };
+      let boat = initialBoat();
+      let previousBoat = { ...boat };
+      let trace = [{ x: boat.x, z: boat.z }];
+      let camera = { x: 0, z: 0, scale: 34, rotation: 0 };
+      let editorCamera = { ...camera };
+      let mode = 'edit';
+      let tool = 'paint';
+      let selectedCurveId = null;
+      let penCurve = null;
+      let pointer = null;
+      let drag = null;
+      let playing = false;
+      let follow = false;
+      let inputMode = 'manual';
+      let sequence = [{ units: 200, w: true, a: false, s: false, d: false }];
+      let sequenceStart = null;
+      let sequenceStartPhase = 0;
+      let recording = false;
+      let sequenceIndex = 0;
+      let sequenceRemaining = 0;
+      let sequenceElapsedUnits = 0;
+      let selectedSequenceIndex = 0;
+      let timelineRows = [];
+      let timelineRuns = { w: [], a: [], s: [], d: [] };
+      let timelineTotalUnits = 0;
+      let timelineCenterUnits = 0;
+      let timelineFollowing = false;
+      let timelinePixelsPerTick = 14;
+      let timelineTargetPixelsPerTick = 14;
+      let timelineDrag = null;
+      let subtickPhase = 0;
+      let lastKeys = EMPTY_KEYS;
+      const downKeys = new Set();
+      const keyEvents = [];
+      let sampledKeys = { ...EMPTY_KEYS };
+      let autoProgress = 0;
+      let autoTargetProgress = 0;
+      let autoVisualTargetProgress = 0;
+      let autoKeys = { ...EMPTY_KEYS };
+      let autoThrottlePhase = 1;
+      let autoLastDemand = 0;
+      let autoDebug = {};
+      const information = { enabled: false, layers: { direction: true, slip: false, velocity: false,
+        clearance: false, thrust: true, cumulative: true, search: false, rotation: false,
+        projection: false, curvature: false, chord: false, contacts: false, acceleration: false, coast: false } };
+      let solverVisualization = null;
+      let informationRevision = 0;
+      // Presentation values are independent of physics and solver snapshots.
+      const informationAnimationValues = new Map();
+      const informationAnimationUpdated = new Set();
+      let informationAnimationDt = 0;
+      let informationAnimationTime = 0;
+      let informationMoving = false;
+      const lastInformationSolvers = new Map();
+      let lastInformationProjection = null;
+      let lastInformationTarget = null;
+      let informationWidthSample = null;
+      let informationDynamics = null;
+      let informationCoastPrediction = null;
+      let informationChord = null;
+      const informationContactTiles = new Map();
+      let informationContactCounts = { blue: 0, packed: 0, ice: 0, ground: 0 };
+      let informationContactRetention = 0;
+      let autoMaxError = 0;
+      let autoTicks = 0;
+      let autoTravelled = 0;
+      const past = [];
+      const future = [];
+      let lastFrame = 0;
+      let lastVisualFrame = 0;
+      let accumulator = 0;
+      let frameId = 0;
+      let toastTimer = 0;
+
+      function initialBoat() {
+        return { x: spawn.x, z: spawn.z, vx: 0, vz: 0, yaw: Math.fround(spawn.yaw), omega: 0, tick: 0, friction: physics.FRICTION.ground };
+      }
+      function clearPathPreview() {
+        livePath = null;
+      }
+      function terrainAt(x, z) {
+        const key = tileKey(x, z);
+        const explicit = tiles.get(key);
+        if (explicit !== undefined) return explicit;
+        const cached = curveTileCache.get(key);
+        if (cached !== undefined) return cached;
+        const px = x + .5, pz = z + .5;
+        for (let index = curveLayers.length - 1; index >= 0; index--) {
+          const layer = curveLayers[index];
+          if (px < layer.minX || px > layer.maxX || pz < layer.minZ || pz > layer.maxZ) continue;
+          const bx = Math.floor(px / layer.cellSize), bz = Math.floor(pz / layer.cellSize);
+          for (const segment of layer.buckets.get(tileKey(bx, bz)) ?? []) {
+            const t = clamp(((px-segment.x)*segment.dx + (pz-segment.z)*segment.dz) / segment.length2, 0, 1);
+            const dx = px-segment.x-segment.dx*t, dz = pz-segment.z-segment.dz*t;
+            if (dx*dx + dz*dz <= layer.radius2) {
+              curveTileCache.set(key, layer.type);
+              return layer.type;
+            }
+          }
+        }
+        curveTileCache.set(key, 'ground');
+        return 'ground';
+      }
+      function geometricRouteHalfWidthAt(point) {
+        let geometricHalfWidth = 0;
+        for (const layer of curveLayers) {
+          if (point.x < layer.minX || point.x > layer.maxX || point.z < layer.minZ || point.z > layer.maxZ) continue;
+          const bx = Math.floor(point.x/layer.cellSize), bz = Math.floor(point.z/layer.cellSize);
+          for (const segment of layer.buckets.get(tileKey(bx, bz)) ?? []) {
+            const t = clamp(((point.x-segment.x)*segment.dx + (point.z-segment.z)*segment.dz)/segment.length2,0,1);
+            const dx = point.x-segment.x-segment.dx*t, dz = point.z-segment.z-segment.dz*t;
+            if (dx*dx+dz*dz <= layer.radius2) geometricHalfWidth = Math.max(geometricHalfWidth, Math.sqrt(layer.radius2));
+          }
+        }
+        return geometricHalfWidth;
+      }
+      function routeHalfWidthAt(point, cache = true) {
+        const key = Math.round(point.s*2);
+        if (cache && routeWidthCache.has(key)) return routeWidthCache.get(key);
+        const geometricHalfWidth = geometricRouteHalfWidthAt(point);
+        // Painted tiles and overlapping Bézier ice are both part of the real
+        // corridor. Probe the hull along the route normal instead of assuming
+        // that a missing Bézier ice stroke means a two-block-wide road.
+        const nx = -point.tz, nz = point.tx;
+        let margin = Infinity;
+        for (const sign of [-1, 1]) {
+          let clear = 0;
+          for (let distance = .25; distance <= 32; distance += .25) {
+            if (!hullOnIce(point.x+nx*sign*distance, point.z+nz*sign*distance)) break;
+            clear = distance;
+          }
+          margin = Math.min(margin, clear);
+        }
+        // A dry gap has no ice corridor to measure. Keep a hull-scale route
+        // corridor there so the controller continues driving toward the next
+        // ice patch instead of requesting exactly zero speed.
+        const dryGapWidth = !geometricHalfWidth && !hullOnIce(point.x,point.z)
+          ? 2*physics.HALF_WIDTH : 0;
+        const halfWidth = Math.max(geometricHalfWidth, physics.HALF_WIDTH+margin, dryGapWidth);
+        if (cache) routeWidthCache.set(key, halfWidth);
+        return halfWidth;
+      }
+      function brushWidth() {
+        const value = Math.round(Number($('width').value));
+        return Number.isSafeInteger(value) && value > 0 ? value : 1;
+      }
+      function resetBoat() {
+        resetInformationAnimation();
+        solverVisualization = null;
+        clearPathPreview();
+        boat = initialBoat();
+        previousBoat = { ...boat };
+        boat.friction = physics.frictionAt(boat.x, boat.z, terrainAt);
+        trace = [{ x: boat.x, z: boat.z }];
+        sequenceIndex = 0;
+        sequenceRemaining = 0;
+        sequenceElapsedUnits = 0;
+        subtickPhase = 0;
+        lastKeys = EMPTY_KEYS;
+        autoProgress = routeProjection(boat.x, boat.z)?.s ?? 0;
+        autoTargetProgress = autoProgress;
+        autoVisualTargetProgress = autoProgress;
+        autoKeys = { ...EMPTY_KEYS };
+        timelineCenterUnits = 0;
+        invalidate();
+      }
+      function cubic(points, t) {
+        const q = 1 - t;
+        return {
+          x: q*q*q*points[0].x + 3*q*q*t*points[1].x + 3*q*t*t*points[2].x + t*t*t*points[3].x,
+          z: q*q*q*points[0].z + 3*q*q*t*points[1].z + 3*q*t*t*points[2].z + t*t*t*points[3].z
+        };
+      }
+      function cubicDerivatives(points, t) {
+        const q = 1 - t;
+        const first = {
+          x: 3*q*q*(points[1].x-points[0].x) + 6*q*t*(points[2].x-points[1].x) + 3*t*t*(points[3].x-points[2].x),
+          z: 3*q*q*(points[1].z-points[0].z) + 6*q*t*(points[2].z-points[1].z) + 3*t*t*(points[3].z-points[2].z)
+        };
+        const second = {
+          x: 6*q*(points[2].x-2*points[1].x+points[0].x) + 6*t*(points[3].x-2*points[2].x+points[1].x),
+          z: 6*q*(points[2].z-2*points[1].z+points[0].z) + 6*t*(points[3].z-2*points[2].z+points[1].z)
+        };
+        return { first, second };
+      }
+      function sampleRouteSegment(index) {
+        const points = routes[index].points;
+        const startSample = Math.max(0, routeSamples.length - 1);
+        const startS = routeLength;
+        const estimate = Math.hypot(points[1].x-points[0].x, points[1].z-points[0].z)
+          + Math.hypot(points[2].x-points[1].x, points[2].z-points[1].z)
+          + Math.hypot(points[3].x-points[2].x, points[3].z-points[2].z);
+        const steps = clamp(Math.ceil(estimate * 8), 16, 4000);
+        for (let i = 0; i <= steps; i++) {
+          const point = cubic(points, i / steps);
+          const previous = routeSamples.at(-1);
+          if (previous) {
+            const length = Math.hypot(point.x-previous.x, point.z-previous.z);
+            if (length < 1e-8) continue;
+            routeLength += length;
+          }
+          routeSamples.push({ x: point.x, z: point.z, s: routeLength, index, t: i / steps });
+        }
+        routeSegments.push({ index, startSample, endSample: routeSamples.length - 1, startS,
+          minX: Math.min(...points.map(point => point.x)), maxX: Math.max(...points.map(point => point.x)),
+          minZ: Math.min(...points.map(point => point.z)), maxZ: Math.max(...points.map(point => point.z)) });
+        if (index > 0) {
+          const previous = routes[index-1].points;
+          const incoming = Math.hypot(previous[3].x-previous[2].x, previous[3].z-previous[2].z);
+          const outgoing = Math.hypot(points[1].x-points[0].x, points[1].z-points[0].z);
+          const span = 2*physics.HALF_WIDTH;
+          if (Math.min(incoming,outgoing) < span) routeJoints.push({ s: startS, span });
+        }
+      }
+
+      function rebuildRoute() {
+        informationRevision++;
+        solverVisualization = null;
+        clearPathPreview();
+        routeWidthCache.clear();
+        if (inputMode === 'auto') { if (playing) setPlaying(false); recording = false; inputMode = 'manual'; renderSequence(); }
+        routeSamples = [];
+        routeSegments = [];
+        routeJoints = [];
+        routeLength = 0;
+        for (let index = 0; index < routes.length; index++) sampleRouteSegment(index);
+        autoProgress = routeProjection(boat.x, boat.z, autoProgress)?.s ?? 0;
+        autoTargetProgress = autoProgress;
+        autoVisualTargetProgress = autoProgress;
+        updateButtons();
+        invalidate();
+      }
+      function rawRouteAt(distance) {
+        if (!routeSamples.length) return null;
+        const s = clamp(distance, 0, routeLength);
+        let low = 0, high = routeSamples.length - 1;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (routeSamples[middle].s < s) low = middle + 1;
+          else high = middle;
+        }
+        const after = routeSamples[low];
+        const before = routeSamples[Math.max(0, low - 1)];
+        const fraction = after.s > before.s ? (s - before.s) / (after.s - before.s) : 1;
+        const index = after.index;
+        const t = before.index === after.index ? before.t + (after.t - before.t) * fraction : after.t * fraction;
+        const points = routes[index].points;
+        const point = cubic(points, t);
+        const { first, second } = cubicDerivatives(points, t);
+        let magnitude = Math.hypot(first.x, first.z);
+        let dx = first.x, dz = first.z;
+        if (magnitude < 1e-7) {
+          dx = after.x-before.x; dz = after.z-before.z;
+          magnitude = Math.hypot(dx,dz) || 1;
+        }
+        const curvature = magnitude > 1e-7 ? (first.x*second.z-first.z*second.x) / (magnitude*magnitude*magnitude) : 0;
+        return { x: point.x, z: point.z, tx: dx/magnitude, tz: dz/magnitude, curvature: Number.isFinite(curvature) ? curvature : 0, s };
+      }
+      function routeAt(distance) {
+        const point = rawRouteAt(distance);
+        if (!point) return null;
+        const joint = routeJoints.find(joint => Math.abs(point.s-joint.s) < joint.span);
+        if (!joint) return point;
+        // Tiny pen handles make point curvature singular at an otherwise
+        // connected Bézier joint. Measure direction over the hull's travel
+        // scale, so adjacent segments enter the same continuous estimate.
+        const span = joint.span;
+        const before = rawRouteAt(point.s-span);
+        const after = rawRouteAt(point.s+span);
+        const lx = point.x-before.x, lz = point.z-before.z;
+        const rx = after.x-point.x, rz = after.z-point.z;
+        const leftLength = Math.hypot(lx,lz), rightLength = Math.hypot(rx,rz);
+        const dx = after.x-before.x, dz = after.z-before.z;
+        const magnitude = Math.hypot(dx,dz);
+        if (leftLength < 1e-8 || rightLength < 1e-8 || magnitude < 1e-8) return point;
+        const turn = Math.atan2(lx*rz-lz*rx,lx*rx+lz*rz);
+        const curvature = turn / ((after.s-before.s)/2);
+        const offset = Math.abs(point.s-joint.s)/span;
+        const weight = 1-offset**4;
+        const tx = point.tx*(1-weight)+dx/magnitude*weight;
+        const tz = point.tz*(1-weight)+dz/magnitude*weight;
+        const tangentLength = Math.hypot(tx,tz);
+        return { x: point.x, z: point.z, tx: tx/tangentLength, tz: tz/tangentLength,
+          curvature: point.curvature*(1-weight)+curvature*weight, s: point.s };
+      }
+      function routeSAt(index, t) {
+        const segment = routeSegments[index];
+        if (t <= 0 || routeSamples[segment.endSample]?.index !== index) return segment.startS;
+        let low = segment.startSample, high = segment.endSample;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (routeSamples[middle].index < index || (routeSamples[middle].index === index && routeSamples[middle].t < t)) low = middle + 1;
+          else high = middle;
+        }
+        const after = routeSamples[low];
+        const before = routeSamples[Math.max(0, low - 1)];
+        if (before.index === index) {
+          const fraction = after.t > before.t ? (t-before.t)/(after.t-before.t) : 0;
+          return before.s + (after.s-before.s)*fraction;
+        }
+        return routeSegments[index].startS + (after.s-routeSegments[index].startS)*t/after.t;
+      }
+      function routeProjection(x, z, hint = autoProgress) {
+        if (!routeSegments.length) return null;
+        let best = { distance2: Infinity, index: 0, t: 0, s: 0 };
+        const accept = (index, t, s, distance2) => {
+          if (distance2 < best.distance2 - 1e-9 || (Math.abs(distance2-best.distance2) <= 1e-9 && Math.abs(s-hint) < Math.abs(best.s-hint))) {
+            best = { distance2, index, t, s };
+          }
+        };
+        const candidates = routeSegments.map(segment => {
+          const dx = Math.max(segment.minX-x, 0, x-segment.maxX);
+          const dz = Math.max(segment.minZ-z, 0, z-segment.maxZ);
+          return { segment, lowerBound: dx*dx + dz*dz };
+        }).sort((a,b) => a.lowerBound-b.lowerBound || Math.abs(a.segment.startS-hint)-Math.abs(b.segment.startS-hint));
+        for (const { segment, lowerBound } of candidates) {
+          if (lowerBound > best.distance2) break;
+          const points = routes[segment.index].points;
+          let seed = { distance2: Infinity, t: 0, s: segment.startS };
+          const consider = (t, s, px, pz, exactPoint = false) => {
+            const distance2 = (px-x)**2 + (pz-z)**2;
+            if (distance2 < seed.distance2) seed = { distance2, t, s };
+            if (exactPoint) accept(segment.index, t, s, distance2);
+          };
+          const start = cubic(points, 0), end = cubic(points, 1);
+          consider(0, segment.startS, start.x, start.z, true);
+          consider(1, routeSAt(segment.index, 1), end.x, end.z, true);
+          for (let i = segment.startSample + 1; i <= segment.endSample; i++) {
+            const a = routeSamples[i - 1], b = routeSamples[i];
+            const dx = b.x-a.x, dz = b.z-a.z;
+            const fraction = clamp(((x-a.x)*dx + (z-a.z)*dz) / (dx*dx+dz*dz), 0, 1);
+            const px = a.x+dx*fraction, pz = a.z+dz*fraction;
+            const t = a.index === segment.index ? a.t+(b.t-a.t)*fraction : b.t*fraction;
+            consider(t, a.s+(b.s-a.s)*fraction, px, pz);
+          }
+          const seedPoint = cubic(points,seed.t);
+          accept(segment.index,seed.t,routeSAt(segment.index,seed.t),(seedPoint.x-x)**2+(seedPoint.z-z)**2);
+          let t = seed.t;
+          for (let iteration = 0; iteration < 12; iteration++) {
+            const point = cubic(points,t);
+            const { first, second } = cubicDerivatives(points,t);
+            const value = (point.x-x)*first.x + (point.z-z)*first.z;
+            const slope = first.x*first.x + first.z*first.z + (point.x-x)*second.x + (point.z-z)*second.z;
+            if (Math.abs(slope) < 1e-10) break;
+            const next = clamp(t - clamp(value/slope,-.2,.2),0,1);
+            if (Math.abs(next-t) < 1e-10) break;
+            t = next;
+          }
+          const refined = cubic(points,t);
+          consider(t, routeSAt(segment.index,t), refined.x, refined.z, true);
+        }
+        const p = routeAt(best.s);
+        const exact = cubic(routes[best.index].points,best.t);
+        return { x: exact.x, z: exact.z, tx: p.tx, tz: p.tz, curvature: p.curvature,
+          s: best.s, distance: Math.sqrt(best.distance2), index: best.index, t: best.t };
+      }
+      function indexCurve(curve) {
+        const p = curve.points;
+        const radius = curve.width / 2;
+        const cellSize = Math.max(8, radius);
+        const buckets = new Map();
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        const midpoint = (a,b) => ({ x: (a.x+b.x)/2, z: (a.z+b.z)/2 });
+        const stack = [p];
+        while (stack.length) {
+          const points = stack.pop();
+          const [start, first, second, end] = points;
+          const dx = end.x-start.x, dz = end.z-start.z;
+          const length2 = dx*dx+dz*dz;
+          const deviation2 = point => {
+            const t = length2 ? clamp(((point.x-start.x)*dx+(point.z-start.z)*dz)/length2,0,1) : 0;
+            return (point.x-start.x-dx*t)**2 + (point.z-start.z-dz*t)**2;
+          };
+          if (Math.max(deviation2(first),deviation2(second)) > 1/64) {
+            const a = midpoint(start,first), b = midpoint(first,second), c = midpoint(second,end);
+            const d = midpoint(a,b), e = midpoint(b,c), middle = midpoint(d,e);
+            stack.push([middle,e,c,end], [start,a,d,middle]);
+            continue;
+          }
+          minX = Math.min(minX, start.x,end.x); maxX = Math.max(maxX, start.x,end.x);
+          minZ = Math.min(minZ, start.z,end.z); maxZ = Math.max(maxZ, start.z,end.z);
+          const segment = { x: start.x, z: start.z, dx, dz, length2: length2 || 1 };
+          const x0 = Math.floor((Math.min(start.x,end.x)-radius)/cellSize);
+          const x1 = Math.floor((Math.max(start.x,end.x)+radius)/cellSize);
+          const z0 = Math.floor((Math.min(start.z,end.z)-radius)/cellSize);
+          const z1 = Math.floor((Math.max(start.z,end.z)+radius)/cellSize);
+          for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+            const key = tileKey(x,z);
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(segment);
+          }
+        }
+        return { type: curve.type, minX: minX-radius, maxX: maxX+radius,
+          minZ: minZ-radius, maxZ: maxZ+radius, radius2: radius*radius, cellSize, buckets };
+      }
+      function rebuildCurves() {
+        informationRevision++;
+        solverVisualization = null;
+        clearPathPreview();
+        curveLayers = curves.map(indexCurve);
+        curveTileCache = new Map();
+        routeWidthCache.clear();
+        boat.friction = physics.frictionAt(boat.x, boat.z, terrainAt);
+        invalidate();
+      }
+      function snapshot() { return { tiles: [...tiles], curves: copy(curves), routes: copy(routes), spawn: copy(spawn), boat: copy(boat), subtickPhase, sequence: copy(sequence), sequenceStart: copy(sequenceStart), sequenceStartPhase }; }
+      function restore(s) {
+        resetInformationAnimation();
+        if (playing) setPlaying(false);
+        inputMode = 'manual';
+        tiles = new Map(s.tiles);
+        curves = copy(s.curves);
+        routes = copy(s.routes ?? []);
+        spawn = copy(s.spawn);
+        boat = copy(s.boat);
+        previousBoat = { ...boat };
+        sequence = copy(s.sequence);
+        sequenceStart = copy(s.sequenceStart);
+        subtickPhase = s.subtickPhase;
+        sequenceStartPhase = s.sequenceStartPhase;
+        sequenceIndex = 0;
+        sequenceRemaining = 0;
+        sequenceElapsedUnits = 0;
+        timelineCenterUnits = 0;
+        timelineFollowing = false;
+        nextCurveId = Math.max(1, ...curves.map(c => c.id + 1));
+        nextRouteId = Math.max(1, ...routes.map(c => c.id + 1));
+        selectedCurveId = null;
+        selectedRouteId = null;
+        penCurve = null;
+        penRoute = tool === 'route' ? resumeRoutePen() : null;
+        autoProgress = 0;
+        autoTargetProgress = 0;
+        autoVisualTargetProgress = 0;
+        autoLastDemand = 0;
+        trace = [{ x: boat.x, z: boat.z }];
+        rebuildCurves();
+        rebuildRoute();
+        renderSequence();
+      }
+      function saveHistory() {
+        past.push(snapshot());
+        if (past.length > 80) past.shift();
+        future.length = 0;
+        updateButtons();
+      }
+      function undo() {
+        if (!past.length) return;
+        future.push(snapshot());
+        restore(past.pop());
+        updateButtons();
+      }
+      function redo() {
+        if (!future.length) return;
+        past.push(snapshot());
+        restore(future.pop());
+        updateButtons();
+      }
+      function updateButtons() {
+        $('undo').disabled = past.length === 0;
+        $('redo').disabled = future.length === 0;
+        $('play').textContent = playing ? '暂停' : '运行';
+        $('play').classList.toggle('active', playing);
+        $('mode-toggle').textContent = mode === 'drive' ? '返回编辑' : '操纵';
+        $('mode-toggle').classList.toggle('active', mode === 'drive');
+        $('record-toggle').textContent = recording ? '录制中' : '开始录制';
+        $('record-toggle').setAttribute('aria-pressed', String(recording));
+        $('follow').setAttribute('aria-pressed', String(follow));
+        $('auto-run').disabled = routeLength < .1;
+        $('route-calculate').textContent = '自动+路径';
+        $('route-calculate').title = livePath ? '点击停止自动路径' : '边开船边按船速向前生成居中路径';
+        $('route-calculate').classList.toggle('active', !!livePath);
+        $('route-clear').disabled = routes.length === 0;
+        $('auto-run').classList.toggle('active', inputMode === 'auto' && playing);
+        $('stage').classList.remove('visible');
+        for (const button of document.querySelectorAll('[data-tool]')) {
+          button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
+        }
+        canvas.dataset.tool = tool;
+        positionInformationPanel();
+      }
+      function setTool(next) {
+        tool = next;
+        penCurve = null;
+        penRoute = next === 'route' ? resumeRoutePen() : null;
+        selectedCurveId = null;
+        selectedRouteId = null;
+        updateButtons();
+        invalidate();
+      }
+      function setPlaying(value) {
+        playing = value;
+        if (!value && inputMode === 'auto') renderSequence();
+        previousBoat = { ...boat };
+        lastFrame = value ? performance.now() : 0;
+        accumulator = 0;
+        keyEvents.length = 0;
+        sampledKeys = manualKeys();
+        updateButtons();
+        invalidate();
+      }
+      function setMode(next) {
+        if (mode === next) return;
+        if (livePath) clearPathPreview();
+        downKeys.clear();
+        if (next === 'drive') {
+          if (inputMode === 'auto') { if (playing) setPlaying(false); recording = false; renderSequence(); }
+          editorCamera = { ...camera };
+          mode = 'drive';
+          inputMode = 'manual';
+          penCurve = null;
+          penRoute = null;
+          selectedCurveId = null;
+          selectedRouteId = null;
+          pointer = null;
+          $('sequence-panel').hidden = true;
+          $('sequence-toggle').setAttribute('aria-expanded', 'false');
+          document.activeElement?.blur();
+          camera.rotation = Math.PI - boat.yaw * Math.PI / 180;
+          beginRecording();
+          setPlaying(true);
+        } else {
+          mode = 'edit';
+          recording = false;
+          setPlaying(false);
+          camera = { ...editorCamera, rotation: 0 };
+          renderSequence();
+        }
+        document.body.classList.toggle('drive', mode === 'drive');
+        updateDriveKeys();
+        updateButtons();
+        invalidate();
+      }
+      function updateDriveKeys() {
+        for (const key of ['w','a','s','d']) $('drive-keys').querySelector(`.${key}`).classList.toggle('down', downKeys.has(key));
+      }
+      function beginRecording() {
+        saveHistory();
+        sequenceStart = copy(boat);
+        sequenceStartPhase = subtickPhase;
+        sequence = [];
+        recording = true;
+        renderSequence();
+        updateButtons();
+      }
+      function recordKeys(keys) {
+        const last = sequence.at(-1);
+        if (last && last.units < MAX_ROW_UNITS && ['w','a','s','d'].every(key => last[key] === keys[key])) {
+          last.units++;
+        } else if (sequence.length < MAX_SEQUENCE_ROWS) {
+          sequence.push({ units: 1, w: keys.w, a: keys.a, s: keys.s, d: keys.d });
+        } else {
+          recording = false;
+          updateButtons();
+          showToast('录制已达到序列段数上限');
+        }
+      }
+      function hullOnIce(x,z) {
+        for (let bx = Math.floor(x-physics.HALF_WIDTH); bx <= Math.floor(x+physics.HALF_WIDTH); bx++) {
+          if (bx+1 <= x-physics.HALF_WIDTH || bx >= x+physics.HALF_WIDTH) continue;
+          for (let bz = Math.floor(z-physics.HALF_WIDTH); bz <= Math.floor(z+physics.HALF_WIDTH); bz++) {
+            if (bz+1 <= z-physics.HALF_WIDTH || bz >= z+physics.HALF_WIDTH) continue;
+            if (!MATERIALS.has(terrainAt(bx,bz))) return false;
+          }
+        }
+        return true;
+      }
+      function chordOnIce(start,end) {
+        const steps = Math.max(1, Math.ceil(Math.hypot(end.x-start.x,end.z-start.z)/.5));
+        for (let step = 0; step <= steps; step++) {
+          const fraction = step/steps;
+          if (!hullOnIce(start.x+(end.x-start.x)*fraction,
+            start.z+(end.z-start.z)*fraction)) return false;
+        }
+        return true;
+      }
+      function iceBlockAt(x, z) {
+        return MATERIALS.has(terrainAt(Math.floor(x), Math.floor(z)));
+      }
+      function iceRayLength(origin, dx, dz, maxDist = 128) {
+        let x = Math.floor(origin.x), z = Math.floor(origin.z);
+        if (!MATERIALS.has(terrainAt(x, z))) return 0;
+        const sx = Math.sign(dx), sz = Math.sign(dz);
+        const tDeltaX = dx ? Math.abs(1/dx) : Infinity;
+        const tDeltaZ = dz ? Math.abs(1/dz) : Infinity;
+        let tMaxX = dx ? (sx > 0 ? x+1-origin.x : origin.x-x)*tDeltaX : Infinity;
+        let tMaxZ = dz ? (sz > 0 ? z+1-origin.z : origin.z-z)*tDeltaZ : Infinity;
+        let t = 0;
+        for (let n = 0; n < 1024 && t < maxDist; n++) {
+          if (tMaxX < tMaxZ) {
+            t = tMaxX;
+            if (t >= maxDist) return maxDist;
+            x += sx;
+            tMaxX += tDeltaX;
+          } else {
+            t = tMaxZ;
+            if (t >= maxDist) return maxDist;
+            z += sz;
+            tMaxZ += tDeltaZ;
+          }
+          if (!MATERIALS.has(terrainAt(x, z))) return t;
+        }
+        return Math.min(t, maxDist);
+      }
+      function recenterOnIce(origin, dir) {
+        const nx = -dir.z, nz = dir.x;
+        const left = iceRayLength(origin, nx, nz);
+        const right = iceRayLength(origin, -nx, -nz);
+        if (left+right < 1.5) return null;
+        const shift = (left-right)/2;
+        const point = { x: origin.x+nx*shift, z: origin.z+nz*shift };
+        if (!iceBlockAt(point.x, point.z)) return null;
+        return point;
+      }
+      function rotateDir(dir, angle) {
+        const c = Math.cos(angle), s = Math.sin(angle);
+        return { x: dir.x*c-dir.z*s, z: dir.x*s+dir.z*c };
+      }
+      const LIVE_STEP = 6;
+      // ponytail: ignore a half-block of wall quantization so the heading doesn't hunt. Raise the .5 if diagonals still ripple.
+      function nextCenterStep(pos, dir) {
+        for (const scale of [1, .5, .25]) {
+          const step = LIVE_STEP*scale;
+          const probe = { x: pos.x+dir.x*step, z: pos.z+dir.z*step };
+          const seen = recenterOnIce(probe, dir);
+          if (!seen || !chordOnIce(pos, seen)) continue;
+          const vx = seen.x-pos.x, vz = seen.z-pos.z;
+          if (vx*dir.x+vz*dir.z <= .2) continue;
+          let angle = Math.atan2(dir.x*vz-dir.z*vx, dir.x*vx+dir.z*vz);
+          const noise = Math.atan2(.5, step);
+          if (Math.abs(angle) < noise) angle = 0;
+          else angle -= Math.sign(angle)*noise;
+          const nextDir = rotateDir(dir, clamp(angle, -.35, .35));
+          const stepped = { x: pos.x+nextDir.x*step, z: pos.z+nextDir.z*step };
+          const next = recenterOnIce(stepped, nextDir);
+          if (!next || !chordOnIce(pos, next)) continue;
+          if ((next.x-pos.x)*nextDir.x+(next.z-pos.z)*nextDir.z <= .2) continue;
+          return { pos: next, dir: nextDir };
+        }
+        return null;
+      }
+      function cubicOnIce(points) {
+        const estimate=points.slice(1).reduce((length,point,index) =>
+          length+Math.hypot(point.x-points[index].x,point.z-points[index].z),0);
+        const steps=Math.max(1,Math.ceil(estimate/.25));
+        for (let i=0; i<=steps; i++) {
+          const point=cubic(points,i/steps);
+          if (!hullOnIce(point.x,point.z)) return false;
+        }
+        return true;
+      }
+      function commitCenterSpan(a, b, dirA, dirB) {
+        const length = Math.hypot(b.x-a.x, b.z-a.z);
+        const handle = Math.min(length*.4, Math.max(length*.28, 2*physics.HALF_WIDTH));
+        let bezier = [a,
+          { x: a.x+dirA.x*handle, z: a.z+dirA.z*handle },
+          { x: b.x-dirB.x*handle, z: b.z-dirB.z*handle }, b];
+        if (!cubicOnIce(bezier)) bezier = [a,
+          { x: a.x+(b.x-a.x)/3, z: a.z+(b.z-a.z)/3 },
+          { x: a.x+2*(b.x-a.x)/3, z: a.z+2*(b.z-a.z)/3 }, b];
+        routes.push({ id: nextRouteId++, points: bezier });
+        sampleRouteSegment(routes.length-1);
+      }
+      function stepLivePath() {
+        const next = nextCenterStep(livePath.pos, livePath.dir);
+        if (!next) return false;
+        const pts = livePath.points;
+        for (let i = 0; i < pts.length-8; i++) {
+          if ((pts[i].x-next.pos.x)**2+(pts[i].z-next.pos.z)**2 < .64) return false;
+        }
+        commitCenterSpan(livePath.pos, next.pos, livePath.dir, next.dir);
+        livePath.pos = next.pos;
+        livePath.dir = next.dir;
+        pts.push(next.pos);
+        return pts.length < 5000;
+      }
+      function liveLead() {
+        return Math.max(96, Math.hypot(boat.vx, boat.vz)*4*Math.sqrt(90));
+      }
+      function extendLivePath(limit = 48) {
+        let steps = 0;
+        while (livePath && !livePath.done && routeLength-autoProgress < liveLead() && steps++ < limit) {
+          if (!stepLivePath()) livePath.done = true;
+        }
+      }
+      function startLivePath() {
+        if (!hullOnIce(boat.x, boat.z)) throw Error('船体需要完全位于冰面上');
+        const yaw = boat.yaw*Math.PI/180;
+        const dir = { x: -Math.sin(yaw), z: Math.cos(yaw) };
+        const pos = recenterOnIce({ x: boat.x, z: boat.z }, dir);
+        if (!pos) throw Error('周围没有可通行冰面');
+        if (playing) setPlaying(false);
+        saveHistory();
+        routes = [];
+        selectedRouteId = null;
+        penRoute = tool === 'route' ? resumeRoutePen() : null;
+        livePath = null;
+        rebuildRoute();
+        livePath = { dir, pos, points: [pos], done: false };
+        extendLivePath();
+        if (routeLength < 1) {
+          livePath = null;
+          routes = [];
+          rebuildRoute();
+          throw Error('船头前方没有足够的可通行冰面');
+        }
+        sequenceStart = copy(boat);
+        sequenceStartPhase = subtickPhase;
+        sequence = [];
+        selectedSequenceIndex = -1;
+        recording = true;
+        inputMode = 'auto';
+        autoProgress = routeProjection(boat.x, boat.z, 0)?.s ?? 0;
+        autoTargetProgress = autoProgress;
+        autoVisualTargetProgress = autoProgress;
+        autoThrottlePhase = 1;
+        autoMaxError = 0;
+        autoTicks = 0;
+        autoTravelled = 0;
+        const decision = autoControl(boat);
+        autoKeys = decision.keys;
+        autoLastDemand = decision.demand;
+        autoDebug = decision.debug;
+        renderSequence();
+        setPlaying(true);
+        showToast('按船速向前生成路径');
+      }
+      function demoCenterline() {
+        const savedTiles = tiles, savedCache = curveTileCache;
+        tiles = new Map();
+        curveTileCache = new Map();
+        try {
+          for (let z = 0; z < 48; z++) for (let x = -3; x <= 4; x++) tiles.set(tileKey(x, z), 'blue');
+          for (let z = 48; z < 140; z++) {
+            const shift = Math.floor((z-48)*.15);
+            for (let x = -3+shift; x <= 4+shift; x++) tiles.set(tileKey(x, z), 'blue');
+          }
+          let dir = { x: 0, z: 1 };
+          let pos = recenterOnIce({ x: .5, z: 2 }, dir);
+          if (!pos || Math.abs(pos.x-1) > .05) throw Error('straight center');
+          let turned = false;
+          for (let i = 0; i < 10; i++) {
+            const next = nextCenterStep(pos, dir);
+            if (!next) throw Error('step '+i);
+            const nx = -next.dir.z, nz = next.dir.x;
+            const left = iceRayLength(next.pos, nx, nz);
+            const right = iceRayLength(next.pos, -nx, -nz);
+            if (Math.abs(left-right) > .15) throw Error('unequal '+left+' '+right);
+            if (next.pos.z < 46 && (Math.abs(next.pos.x-1) > .6 || Math.abs(next.dir.x) > .05)) throw Error('wiggle '+next.pos.x+' '+next.dir.x);
+            if (next.dir.z < .7) throw Error('heading');
+            if (next.pos.z > 30 && next.pos.x > pos.x+.2) turned = true;
+            pos = next.pos;
+            dir = next.dir;
+          }
+          if (!turned || pos.x < 2) throw Error('bend '+pos.x);
+          return 'ok';
+        } finally {
+          tiles = savedTiles;
+          curveTileCache = savedCache;
+        }
+      }
+      function shortcutRoom(projection) {
+        if (routeHalfWidthAt(projection) >= 4*physics.HALF_WIDTH) return 1;
+        const nx = -projection.tz, nz = projection.tx;
+        let margin = 4*physics.HALF_WIDTH;
+        for (const sign of [-1,1]) {
+          for (let distance = .25; distance <= 4*physics.HALF_WIDTH; distance += .25) {
+            if (!hullOnIce(projection.x+nx*sign*distance,projection.z+nz*sign*distance)) {
+              margin = Math.min(margin,distance-.25);
+              break;
+            }
+          }
+        }
+        return clamp((margin-2*physics.HALF_WIDTH)/(2*physics.HALF_WIDTH),0,1);
+      }
+      function shortcutMargin(projection, sign, requested) {
+        if (!sign || !requested) return 0;
+        if (!hullOnIce(projection.x,projection.z)) return 0;
+        const nx = -projection.tz, nz = projection.tx;
+        const extent = Math.max(Math.abs(requested),routeHalfWidthAt(projection));
+        let margin = 0;
+        for (let distance = .25; distance <= extent+.25; distance += .25) {
+          if (!hullOnIce(projection.x+nx*sign*distance,
+            projection.z+nz*sign*distance)) break;
+          margin = distance;
+        }
+        return margin;
+      }
+      function routeLookahead(projection, state) {
+        if (!projection) return null;
+        const curvature = Math.abs(projection.curvature);
+        const alongSpeed = Math.max(0, state.vx*projection.tx + state.vz*projection.tz);
+        const halfWidth = routeHalfWidthAt(projection);
+        // A Bézier ice stroke supplies an intentional corridor width. For
+        // hand-painted tiles, use the yaw response distance; a broad painted
+        // patch alone must not push p across an entire bend.
+        const clearance = Math.max(0, halfWidth-physics.HALF_WIDTH);
+        const yawDistance = Math.max(alongSpeed*2*Math.sqrt(90), 2*physics.HALF_WIDTH);
+        const strokeWidth = geometricRouteHalfWidthAt(projection);
+        const strokeClearance = Math.max(0,strokeWidth-physics.HALF_WIDTH);
+        const widthFactor = clamp(strokeClearance/(2*physics.HALF_WIDTH),1,2);
+        // A turn that continues in one direction needs p beyond its apex.
+        // Opposing turns cancel in the signed sweep, so p stays near the
+        // first bend instead of skipping across the next one.
+        const forecastDistance = strokeWidth > 0
+          ? Math.max(yawDistance,4*strokeWidth)*widthFactor : yawDistance;
+        let signedSweep = 0;
+        let forecastPrevious = projection;
+        for (let sample = 1; sample <= 8; sample++) {
+          const next = routeAt(projection.s+forecastDistance*sample/8);
+          signedSweep += Math.atan2(forecastPrevious.tx*next.tz-forecastPrevious.tz*next.tx,
+            forecastPrevious.tx*next.tx+forecastPrevious.tz*next.tz);
+          forecastPrevious = next;
+        }
+        const leadWidths = 2 + 2*clamp(Math.abs(signedSweep)/Math.PI,0,1);
+        const responseDistance = strokeWidth > 0
+          ? Math.max(yawDistance,leadWidths*strokeWidth)*widthFactor
+          : yawDistance;
+        let angularSweep = 0;
+        let previous = projection;
+        for (let sample = 1; sample <= 8; sample++) {
+          const next = routeAt(projection.s+responseDistance*sample/8);
+          angularSweep += Math.abs(Math.atan2(previous.tx*next.tz-previous.tz*next.tx,
+            previous.tx*next.tx+previous.tz*next.tz));
+          previous = next;
+        }
+        const bend = Math.max(curvature*responseDistance,angularSweep);
+        const bendWeight = bend/(1+bend);
+        const nx = -projection.tz, nz = projection.tx;
+        const inside = Math.max(0, Math.sign(projection.curvature)*
+          ((state.x-projection.x)*nx+(state.z-projection.z)*nz));
+        // Painted ice only supplies a measured local width, so keep its
+        // response horizon tied to yaw time. Its turn weight grows sooner:
+        // the lateral thrust must start before the boat reaches the apex.
+        // Bézier ice has an explicit stroke width and retains its wider lead.
+        const requested = Math.min(routeLength-projection.s,
+          responseDistance*(strokeWidth > 0 ? bendWeight : Math.sqrt(bendWeight))
+            *(1+inside/(inside+clearance+1e-9)));
+        if (requested < 1e-8) return projection;
+        const safeTarget = distance => {
+          const target = routeAt(projection.s+distance);
+          return chordOnIce(state,target);
+        };
+        if (safeTarget(requested)) return routeAt(projection.s+requested);
+        let safe = 0, unsafe = requested;
+        for (let iteration = 0; iteration < 7; iteration++) {
+          const middle = (safe+unsafe)/2;
+          if (safeTarget(middle)) safe = middle;
+          else unsafe = middle;
+        }
+        return safe > 1e-8 ? routeAt(projection.s+safe) : projection;
+      }
+      function cornerBrakeDemand(projection, state) {
+        const speed = Math.hypot(state.vx,state.vz);
+        if (speed < .05) return 0;
+        const retention = physics.frictionAt(state.x,state.z,terrainAt);
+        // Include the long passive braking distance on blue ice. This is a
+        // local-retention estimate; actual contact friction is sampled per tick.
+        const preview = Math.min(routeLength-projection.s,
+          Math.max(speed*speed/(2*.04),speed/Math.max(.01,1-retention))+speed*8);
+        const step = Math.max(.5,speed/2);
+        let required = 0;
+        for (let distance = 0; distance <= preview; distance += step) {
+          const at = projection.s+distance;
+          const bend = routeAt(at);
+          const halfWidth = routeHalfWidthAt(bend);
+          const clearance = Math.max(0,halfWidth-physics.HALF_WIDTH);
+          let curvature = Math.abs(bend.curvature);
+          if (curvature < 1e-6) continue;
+          let shortcutWeight = 0;
+          if (clearance > 0 && curvature*clearance > 1 &&
+              chordOnIce(routeAt(at-halfWidth),routeAt(at+halfWidth))) {
+            shortcutWeight = clamp(curvature*clearance-1,0,1);
+            curvature += (1/clearance-curvature)*shortcutWeight;
+          }
+          const yawDistance = Math.sqrt(.04/curvature)*2*Math.sqrt(90);
+          const before = routeAt(at-yawDistance).curvature;
+          const after = routeAt(at+yawDistance).curvature;
+          const change = Math.max(Math.abs(bend.curvature-before),Math.abs(after-bend.curvature));
+          const rapidity = change/(curvature+change)*(1-shortcutWeight);
+          const farAfter = routeAt(at+2*yawDistance).curvature;
+          const reversal = (Math.abs(before)+Math.abs(farAfter)-Math.abs(before+farAfter))
+            /(Math.abs(before)+Math.abs(farAfter)+1e-9);
+          const reversalCost = reversal*yawDistance/(yawDistance+2*halfWidth);
+          const hullClearance = Math.max(0,clearance/halfWidth);
+          const narrowRoom = clamp(clearance/(2*physics.HALF_WIDTH),.7,1);
+          const lateralAuthority = .04*.9*(.6+.4*hullClearance)*narrowRoom
+            /(1+.5*rapidity+.35*reversalCost);
+          // v²κ is the demand at this bend. Convert its excess over W's
+          // lateral authority into the longitudinal thrust needed now.
+          const excess = speed*speed*curvature-lateralAuthority;
+          if (excess <= 0) continue;
+          const coastDistance = (speed-Math.sqrt(lateralAuthority/curvature))
+            /Math.max(.01,1-retention);
+          // A distant bend does not justify lifting W yet. Reserve yaw time
+          // when it enters braking range, and avoid a zero-distance impulse.
+          if (distance > coastDistance+speed*8) continue;
+          const availableDistance = Math.max(2,speed*6,distance-speed*8);
+          required = Math.max(required,excess/(2*curvature*availableDistance));
+        }
+        // targetAlong = .04-.08*B = ice drag-required net deceleration.
+        // Subtract drag once; a clear straight still requests the full .04.
+        return required > 0 ? clamp((.04+required-speed*(1-retention))/.08,0,1) : 0;
+      }
+      function yawDifference(a,b) { return ((a-b+540)%360+360)%360-180; }
+      function steeringAction(yaw, omega, targetYaw, referenceOmega, friction, narrowRoom) {
+        const dampedOmega = omega*friction;
+        const relativeOmega = dampedOmega-referenceOmega;
+        const yawError = yawDifference(targetYaw,yaw);
+        const stoppingAngle = relativeOmega*Math.abs(relativeOmega)/2*(1+.3*narrowRoom);
+        const brakeError = yawError-stoppingAngle;
+        // Bound correction by stopping capability, then quantize the desired
+        // angular velocity. Neutral ticks preserve spin without A/D chatter.
+        const correction = Math.sign(yawError)*Math.min(Math.abs(yawError)/(5+2*narrowRoom),
+          Math.sqrt(2*Math.abs(yawError)/(1+.3*narrowRoom)));
+        const omegaError = referenceOmega+correction-dampedOmega;
+        const turn = omegaError > .8 ? 1 : omegaError < -.8 ? -1 : 0;
+        return { turn, yawError, brakeError, dampedOmega };
+      }
+      function cumulativeTurnThrust(state, targetYaw, referenceOmega, friction,
+        narrowRoom, nx, nz, sideThrust, capture = false) {
+        const samples = capture ? [] : null;
+        const sign = Math.sign(sideThrust);
+        if (!sign) return { firstSide: 0, availableSide: 0, requiredSide: 0, ticks: 0, duty: 0, samples };
+        let yaw = state.yaw, omega = state.omega;
+        let firstSide = 0, availableSide = 0, ticks = 0;
+        // Integrate the same yaw and angular acceleration used by the real
+        // tick. Every intermediate heading contributes part of W's lateral
+        // impulse; do not wait for the final target heading to press W.
+        for (let tick = 0; tick < 28; tick++) {
+          const action = steeringAction(yaw,omega,targetYaw,referenceOmega,friction,narrowRoom);
+          omega = Math.fround(Math.fround(omega)*friction);
+          if (action.turn < 0) omega = Math.fround(omega-1);
+          else if (action.turn > 0) omega = Math.fround(omega+1);
+          yaw = Math.fround(Math.fround(yaw)+omega);
+          const angle = Math.fround(yaw*Math.fround(Math.PI/180));
+          const side = .04*sign*(physics.mcSin(-angle)*nx+physics.mcCos(angle)*nz);
+          if (tick === 0) firstSide = side;
+          availableSide += Math.max(0,side);
+          ticks++;
+          if (samples) samples.push({ tick: ticks, yaw, omega, side,
+            availableSide, requiredSide: Math.abs(sideThrust)*ticks });
+          if (tick >= 2 && Math.abs(yawDifference(targetYaw,yaw)) < 2) break;
+        }
+        const requiredSide = Math.abs(sideThrust)*ticks;
+        const duty = availableSide > 1e-8 && firstSide > 0
+          ? clamp(requiredSide/availableSide,0,1) : 0;
+        return { firstSide, availableSide, requiredSide, ticks, duty, samples };
+      }
+      function autoControl(state, inspect = false) {
+        const projection = routeProjection(state.x, state.z, autoProgress);
+        if (!projection) return { keys: { ...EMPTY_KEYS }, demand: 0 };
+        const candidate = routeLookahead(projection, state);
+        const targetProgress = Math.max(autoTargetProgress, projection.s, candidate.s);
+        if (!inspect) autoTargetProgress = targetProgress;
+        const p = routeAt(targetProgress);
+        const capture = information.enabled && ['thrust','cumulative','search','rotation'].some(key => information.layers[key]);
+        const evaluations = capture && information.layers.search ? [] : null;
+        const searchRanges = evaluations ? [] : null;
+        const tx = projection.tx, tz = projection.tz;
+        const nx = -tz, nz = tx;
+        const cutRoom = shortcutRoom(projection);
+        const errorX = state.x-projection.x, errorZ = state.z-projection.z;
+        const alongSpeed = state.vx*tx + state.vz*tz;
+        const sideSpeed = state.vx*nx + state.vz*nz;
+        // The forward point lies inside the current tangent. Use its normal
+        // displacement as a shortcut target, reserving room for the current
+        // lateral velocity to be stopped before the hull reaches the edge.
+        const requestedShortcut = ((p.x-projection.x)*nx + (p.z-projection.z)*nz)*.3*cutRoom;
+        const shortcutSign = Math.sign(requestedShortcut);
+        let iceMargin = shortcutMargin(projection,shortcutSign,requestedShortcut);
+        const marginHorizon = Math.min(p.s-projection.s,Math.max(0,alongSpeed)*2*Math.sqrt(90));
+        for (let sample = 1; sample <= 4 && marginHorizon > .25; sample++) {
+          const ahead = routeAt(projection.s+marginHorizon*sample/4);
+          const normalAgreement = nx*(-ahead.tz)+nz*ahead.tx;
+          if (normalAgreement <= 0) break;
+          iceMargin = Math.min(iceMargin,shortcutMargin(ahead,shortcutSign,requestedShortcut));
+        }
+        const inwardSpeed = Math.max(0,sideSpeed*shortcutSign);
+        const lateralStopDistance = inwardSpeed*inwardSpeed/(2*.04);
+        const usableMargin = Math.max(0,iceMargin-lateralStopDistance);
+        const shortcut = shortcutSign*Math.min(Math.abs(requestedShortcut),usableMargin);
+        const sideError = errorX*nx + errorZ*nz - shortcut;
+        const friction = physics.frictionAt(state.x, state.z, terrainAt);
+        const speed = Math.hypot(state.vx,state.vz);
+        // Preview the lateral impulse needed before the current world
+        // velocity reaches the next bend. This controls the W thrust angle
+        // directly; there is no target or maximum speed.
+        const toPointX = p.x-state.x, toPointZ = p.z-state.z;
+        const pointBearing = Math.atan2(tx*toPointZ-tz*toPointX,tx*toPointX+tz*toPointZ);
+        const narrowRoom = clamp((2.5-routeHalfWidthAt(projection)),0,1);
+        // Width shapes lateral/yaw feedback, not a speed ceiling on straights.
+        const brakeWeight = cornerBrakeDemand(projection,state);
+        const curvature = clamp(projection.curvature, -1, 1);
+        const curveSpeed = Math.max(0,alongSpeed);
+        // Very broad ice must not make cross-track recovery arbitrarily slow.
+        const feedbackWidth = geometricRouteHalfWidthAt(projection) > 0 ? 4 : 3;
+        const lateralHorizon = Math.sqrt(2*Math.min(feedbackWidth,routeHalfWidthAt(p))/.04)
+          + Math.abs(state.omega)*(1-cutRoom);
+        const sideDamping = 3+.5*(1-cutRoom);
+        const leadTicks = 2*Math.sqrt(90);
+        let steeringCurvature = curvature;
+        for (let sample = 1; sample <= 8; sample++) {
+          steeringCurvature += clamp(routeAt(projection.s + curveSpeed*leadTicks*sample/8).curvature, -1, 1);
+        }
+        steeringCurvature /= 9;
+        const previewDistance = p.s-projection.s;
+        const previewTurn = Math.atan2(tx*p.tz-tz*p.tx,tx*p.tx+tz*p.tz);
+        const previewCurvature = previewDistance > 1e-8 ? previewTurn/previewDistance : curvature;
+        const previewBlend = cutRoom*previewDistance/(previewDistance + curveSpeed*leadTicks + 1e-9);
+        steeringCurvature += (previewCurvature-steeringCurvature)*previewBlend;
+        // A single W press has one .04 thrust vector. On broad ice, scale
+        // the combined request so lateral correction does not erase forward
+        // acceleration; near a tight edge, preserve the lateral request.
+        const positionGain = 2 + (geometricRouteHalfWidthAt(projection) > 0 ? 0
+          : 2*clamp((routeHalfWidthAt(projection)-4)/4,0,1));
+        // Combine preview and feedback BEFORE saturation. Saturating current
+        // curvature first can flip the impulse at a sharp or opposing joint.
+        const requestedSide = curveSpeed*curveSpeed*steeringCurvature
+          - positionGain*sideError/(lateralHorizon*lateralHorizon) - sideDamping*sideSpeed/lateralHorizon;
+        const targetSide = clamp(requestedSide,-.04,.04);
+        const rearTurnWeight = brakeWeight*clamp((speed-.9)/1.1,0,1);
+        // Painted boundaries can narrow independently of the route tangent.
+        // Account for the distance already owed by outward drift before
+        // trading lateral thrust for along-path acceleration.
+        const outwardSpeed = Math.max(0,sideSpeed*Math.sign(sideError));
+        const edgeRisk = clamp((Math.abs(sideError)+outwardSpeed*lateralHorizon)
+          /Math.max(.25,routeHalfWidthAt(projection)-physics.HALF_WIDTH),0,1);
+        const targetAlong = .04*(1-2*brakeWeight);
+        const thrustScale = Math.min(1, .04/(Math.hypot(targetAlong,requestedSide) || .04));
+        const sidePriority = clamp(requestedSide,-.04,.04);
+        const sidePriorityWeight = Math.max(1-cutRoom,
+          geometricRouteHalfWidthAt(projection) > 0 ? 0 : edgeRisk);
+        const steeringSide = (sidePriority*sidePriorityWeight
+          +requestedSide*thrustScale*(1-sidePriorityWeight))*(1-.3*rearTurnWeight);
+        const requestedParallel = targetAlong*(sidePriorityWeight
+          +thrustScale*(1-sidePriorityWeight));
+        const tangentYaw = Math.atan2(-tx, tz) * 180 / Math.PI;
+        const forwardYaw = tangentYaw + Math.asin(clamp(steeringSide/.04, -1, 1))*180/Math.PI;
+        const terminalSpeed = .04*friction/(1-friction);
+        // A rotation has a real cost on ice: yaw is a double integrator and
+        // the boat continues moving while its bow is being turned around.
+        const turnCost = .04*.04/(Math.PI*Math.PI) * (1 + speed/(speed+terminalSpeed));
+        const yawCost = yaw => {
+          const fromBow = yawDifference(yaw,state.yaw)*Math.PI/180;
+          const pYaw = Math.atan2(-p.tx,p.tz)*180/Math.PI;
+          const guideYaw = tangentYaw + yawDifference(pYaw,tangentYaw)*cutRoom;
+          const fromPath = yawDifference(yaw,guideYaw)*Math.PI/180;
+          // A sharp previewed turn must be allowed to point the bow behind
+          // its velocity; W then brakes while building sideways motion.
+          const pathWeight = 2.7*(1-rearTurnWeight);
+          return turnCost*(fromBow*fromBow + pathWeight*fromPath*fromPath);
+        };
+        const sideThrust = steeringSide;
+        const parallelLimit = Math.sqrt(Math.max(0,.04*.04-sideThrust*sideThrust));
+        const withW = parallel => {
+          const magnitude = Math.hypot(parallel,sideThrust);
+          const yaw = magnitude > 1e-8 ? tangentYaw + Math.atan2(sideThrust,parallel)*180/Math.PI : forwardYaw;
+          const result = { parallel, yaw, cost: (parallel-requestedParallel)**2 + yawCost(yaw) };
+          if (evaluations) evaluations.push(result);
+          return result;
+        };
+        // The only continuous search is one dimension: the along-path part
+        // of W's thrust. No trajectory rollouts or curvature/angle switches.
+        let bestW = withW(0);
+        for (const edge of [-parallelLimit, parallelLimit]) {
+          const candidate = withW(edge);
+          if (candidate.cost < bestW.cost) bestW = candidate;
+        }
+        for (const [start,end] of [[-parallelLimit,0],[0,parallelLimit]]) {
+          if (end-start < 1e-8) continue;
+          let left = start, right = end;
+          if (searchRanges) searchRanges.push({ branch: start < 0 ? -1 : 1, iteration: 0, left, right });
+          let a = right-(right-left)*.61803398875;
+          let b = left+(right-left)*.61803398875;
+          let fa = withW(a), fb = withW(b);
+          for (let iteration = 0; iteration < 14; iteration++) {
+            if (fa.cost < fb.cost) {
+              right = b; b = a; fb = fa;
+              a = right-(right-left)*.61803398875; fa = withW(a);
+            } else {
+              left = a; a = b; fa = fb;
+              b = left+(right-left)*.61803398875; fb = withW(b);
+            }
+            if (searchRanges) searchRanges.push({ branch: start < 0 ? -1 : 1, iteration: iteration+1, left, right });
+          }
+          const candidate = fa.cost < fb.cost ? fa : fb;
+          if (candidate.cost < bestW.cost) bestW = candidate;
+        }
+        const coastCost = requestedParallel*requestedParallel + sideThrust*sideThrust + yawCost(forwardYaw);
+        const bowAngle = state.yaw*Math.PI/180;
+        const bowAlong = -Math.sin(bowAngle)*tx + Math.cos(bowAngle)*tz;
+        const bowSide = -Math.sin(bowAngle)*nx + Math.cos(bowAngle)*nz;
+        const reverseCost = (-.005*bowAlong-requestedParallel)**2
+          +(-.005*bowSide-sideThrust)**2+yawCost(forwardYaw);
+        const useW = bestW.cost < Math.min(coastCost,reverseCost);
+        // Changing throttle mode must not select a different heading target.
+        const targetYaw = bestW.yaw;
+        const referenceOmega = clamp((.5*curvature+.5*steeringCurvature)*alongSpeed*180/Math.PI,-5,5);
+        const steering = steeringAction(
+          state.yaw,state.omega,targetYaw,referenceOmega,friction,narrowRoom);
+        const { yawError, brakeError, dampedOmega } = steering;
+        const coastBrake = !useW && reverseCost < coastCost
+          && geometricRouteHalfWidthAt(projection) > 0
+          && speed < 1.5 && edgeRisk < .5
+          && Math.abs(yawError) < 8 && Math.abs(state.omega) < 3;
+        // Suppress weak S here, but keep counter-steering active. A bare
+        // A/D turn still supplies vanilla's .005 forward thrust.
+        const turn = steering.turn;
+        const nextYaw = (state.yaw+dampedOmega+turn)*Math.PI/180;
+        const headingX = -Math.sin(nextYaw), headingZ = Math.cos(nextYaw);
+        const thrustX = tx*bestW.parallel + nx*sideThrust;
+        const thrustZ = tz*bestW.parallel + nz*sideThrust;
+        const projectedRequest = headingX*thrustX + headingZ*thrustZ;
+        const turnThrust = cumulativeTurnThrust(state,targetYaw,referenceOmega,
+          friction,narrowRoom,nx,nz,sideThrust,capture && (information.layers.cumulative || information.layers.rotation));
+        const forwardEffect = speed > 1e-6
+          ? (headingX*state.vx+headingZ*state.vz)/speed : 0;
+        const cumulativeDuty = Math.max(0,turnThrust.duty
+          -brakeWeight*Math.max(0,forwardEffect));
+        const duty = useW ? clamp(Math.max(projectedRequest/.04,cumulativeDuty),0,1) : 0;
+        let w = false;
+        if (duty > 0) {
+          const phase = autoThrottlePhase + duty;
+          w = phase >= 1;
+          if (!inspect) autoThrottlePhase = phase - (w ? 1 : 0);
+        }
+        // Ice drag supplies part of the braking. Leave periodic ticks for
+        // drag and steering instead of holding S through the whole bend.
+        const brakePulsePeriod = speed <= .55 ? 10 : 5;
+        const s = !w && !coastBrake && reverseCost < coastCost
+          && state.tick % brakePulsePeriod !== brakePulsePeriod-1;
+        if (capture) solverVisualization = { state: { ...state }, revision: informationRevision,
+          targetProgress: autoTargetProgress, projection, p, tx, tz, nx, nz, friction,
+          narrowRoom, targetYaw, referenceOmega, requestedParallel, sideThrust, parallelLimit,
+          bestW, evaluations, searchRanges, turnThrust, cumulativeDuty, duty, useW,
+          keys: inspect ? { ...autoKeys } : { w, a: turn < 0, s, d: turn > 0 } };
+        return { keys: { w, a: turn < 0, s, d: turn > 0 }, demand: duty, p,
+          debug: { targetAlong, targetSide, steeringSide, targetYaw, yawError, brakeError,
+            lookahead: p.s-projection.s, targetS: p.s, shortcut, cutRoom, leadTicks,
+            pointBearing, edgeRisk, brakeWeight, rearTurnWeight, useW,
+            bestWYaw: bestW.yaw, bestWCost: bestW.cost, coastCost,
+            cumulativeSide: turnThrust.availableSide, requiredSide: turnThrust.requiredSide,
+            firstSide: turnThrust.firstSide, turnTicks: turnThrust.ticks,
+            cumulativeDuty, forwardEffect, duty, coastBrake } };
+      }
+      function runAuto() {
+        resetInformationAnimation();
+        if (routeLength < .1) return;
+        if (playing) setPlaying(false);
+        saveHistory();
+        const start = routeAt(0);
+        const yaw = Math.fround(Math.atan2(-start.tx, start.tz) * 180 / Math.PI);
+        spawn = { x: start.x, z: start.z, yaw };
+        boat = initialBoat();
+        boat.friction = physics.frictionAt(boat.x, boat.z, terrainAt);
+        previousBoat = { ...boat };
+        trace = [{ x: boat.x, z: boat.z }];
+        subtickPhase = 0;
+        autoProgress = routeProjection(boat.x, boat.z, 0)?.s ?? 0;
+        autoTargetProgress = autoProgress;
+        autoVisualTargetProgress = autoProgress;
+        autoThrottlePhase = 1;
+        autoMaxError = 0;
+        autoTicks = 0;
+        autoTravelled = 0;
+        sequenceStart = copy(boat);
+        sequenceStartPhase = 0;
+        sequence = [];
+        selectedSequenceIndex = -1;
+        recording = true;
+        inputMode = 'auto';
+        const decision = autoControl(boat);
+        autoKeys = decision.keys;
+        autoLastDemand = decision.demand;
+        autoDebug = decision.debug;
+        renderSequence();
+        setPlaying(true);
+      }
+      function manualKeys() {
+        return { w: downKeys.has('w'), a: downKeys.has('a'), s: downKeys.has('s'), d: downKeys.has('d') };
+      }
+      function currentSequenceKeys() {
+        while (sequenceIndex < sequence.length && sequenceRemaining <= 0) {
+          sequenceRemaining = sequence[sequenceIndex].units;
+          if (sequenceRemaining > 0) break;
+          sequenceIndex++;
+        }
+        if (sequenceIndex >= sequence.length) return null;
+        const row = sequence[sequenceIndex];
+        return { w: row.w, a: row.a, s: row.s, d: row.d };
+      }
+      function applyKeyEvents(boundaryTime) {
+        while (keyEvents.length && keyEvents[0].time <= boundaryTime) {
+          const event = keyEvents.shift();
+          sampledKeys[event.key] = event.down;
+        }
+      }
+      function advanceSubtick(boundaryTime, overrideKeys = null) {
+        if (inputMode === 'manual' && !overrideKeys) applyKeyEvents(boundaryTime);
+        const keys = inputMode === 'sequence' ? currentSequenceKeys() : inputMode === 'auto' ? autoKeys : overrideKeys ?? { ...sampledKeys };
+        if (!keys) { setPlaying(false); return; }
+        if (recording && ((mode === 'drive' && inputMode === 'manual') || inputMode === 'auto')) recordKeys(keys);
+        lastKeys = keys;
+        subtickPhase = (subtickPhase + 1) % SUBTICKS_PER_TICK;
+        if (subtickPhase === 0) {
+          previousBoat = { ...boat };
+          boat = physics.step(boat, keys, terrainAt);
+          trace.push({ x: boat.x, z: boat.z });
+          if (trace.length > 12000) trace.splice(0, 1000);
+          if (inputMode === 'auto') {
+            autoTravelled += Math.hypot(boat.x-previousBoat.x, boat.z-previousBoat.z);
+            const p = routeProjection(boat.x, boat.z, autoProgress);
+            autoProgress = p.s;
+            if (livePath && !livePath.done) extendLivePath();
+            autoTicks++;
+            autoMaxError = Math.max(autoMaxError, p.distance);
+            const end = routeAt(routeLength);
+            const distanceToEnd = Math.hypot(boat.x-end.x, boat.z-end.z);
+            const endSpeed = Math.hypot(boat.vx,boat.vz);
+            const nearLastSegment = autoProgress >= routeLength - Math.max(2,endSpeed*3);
+            const nearEndPoint = distanceToEnd <= Math.max(2,endSpeed*3);
+            const beyondEnd = (boat.x-end.x)*end.tx + (boat.z-end.z)*end.tz >= 0;
+            // A nearby endpoint on a returning route is not a completed lap.
+            const travelledEnough = autoTravelled >= routeLength * .85;
+            const tickLimit = Math.max(250, Math.ceil(routeLength/.2)*8);
+            const stillTracing = livePath && !livePath.done;
+            if (!stillTracing && ((travelledEnough && nearLastSegment && nearEndPoint && beyondEnd) || autoTicks >= tickLimit)) {
+              if (autoTicks < tickLimit) autoTargetProgress = routeLength;
+              recording = false;
+              setPlaying(false);
+              showToast(`${autoTicks >= tickLimit ? '已停止' : '到达路线末端'} · 最大偏差 ${autoMaxError.toFixed(2)} 格`);
+            } else {
+              const decision = autoControl(boat);
+              autoKeys = decision.keys;
+              autoLastDemand = decision.demand;
+              autoDebug = decision.debug;
+            }
+          }
+        }
+        if (inputMode === 'sequence') {
+          sequenceElapsedUnits++;
+          sequenceRemaining--;
+          if (sequenceRemaining === 0) { sequenceIndex++; updateSequenceHighlight(); }
+          if (sequenceIndex >= sequence.length) setPlaying(false);
+        }
+        invalidate();
+      }
+      function showToast(message) {
+        const element = $('toast');
+        element.textContent = message;
+        element.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { element.hidden = true; }, 2300);
+      }
+      function worldFromScreen(px, py) {
+        const dx = (px - innerWidth / 2) / camera.scale;
+        const dy = (py - innerHeight / 2) / camera.scale;
+        const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+        return { x: camera.x + dx*c + dy*s, z: camera.z - dx*s + dy*c };
+      }
+      function screenFromWorld(x, z) {
+        const dx = x - camera.x, dz = z - camera.z;
+        const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+        return { x: innerWidth / 2 + (dx*c - dz*s) * camera.scale, y: innerHeight / 2 + (dx*s + dz*c) * camera.scale };
+      }
+      function paintAt(point, erase) {
+        paintSegment(point, point, erase);
+      }
+      function paintSegment(a, b, erase) {
+        informationRevision++;
+        solverVisualization = null;
+        clearPathPreview();
+        routeWidthCache.clear();
+        const radius = Math.max(.5, brushWidth() / 2);
+        const minX = Math.floor(Math.min(a.x,b.x) - radius - .5);
+        const maxX = Math.ceil(Math.max(a.x,b.x) + radius + .5);
+        const minZ = Math.floor(Math.min(a.z,b.z) - radius - .5);
+        const maxZ = Math.ceil(Math.max(a.z,b.z) + radius + .5);
+        const dx = b.x-a.x, dz = b.z-a.z;
+        const length2 = dx*dx+dz*dz;
+        const type = erase ? 'ground' : $('material').value;
+        for (let x = minX; x <= maxX; x++) {
+          for (let z = minZ; z <= maxZ; z++) {
+            const px = x+.5-a.x, pz = z+.5-a.z;
+            const t = length2 ? clamp((px*dx+pz*dz)/length2,0,1) : 0;
+            const ex = px-dx*t, ez = pz-dz*t;
+            if (ex*ex+ez*ez <= radius*radius) tiles.set(tileKey(x,z), type);
+          }
+        }
+        boat.friction = physics.frictionAt(boat.x, boat.z, terrainAt);
+        invalidate();
+      }
+      function curveHit(point) {
+        const threshold = 10 / camera.scale;
+        let best = null;
+        let bestDistance = threshold;
+        for (let c = curves.length - 1; c >= 0; c--) {
+          const curve = curves[c];
+          for (let h = 0; h < 4; h++) {
+            const dist = Math.hypot(point.x-curve.points[h].x, point.z-curve.points[h].z);
+            if (dist < bestDistance) { best = { curve, handle: h }; bestDistance = dist; }
+          }
+        }
+        if (best) return best;
+        bestDistance = threshold;
+        for (let c = curves.length - 1; c >= 0; c--) {
+          const curve = curves[c];
+          for (let i = 0; i <= 80; i++) {
+            const p = cubic(curve.points, i/80);
+            const dist = Math.hypot(point.x-p.x, point.z-p.z);
+            if (dist < bestDistance) { best = { curve, handle: -1 }; bestDistance = dist; }
+          }
+        }
+        return best;
+      }
+      function routeHit(point) {
+        const threshold = 10 / camera.scale;
+        let best = null, bestDistance = threshold;
+        for (let index = routes.length - 1; index >= 0; index--) {
+          const route = routes[index];
+          for (let handle = 0; handle < 4; handle++) {
+            const distance = Math.hypot(point.x-route.points[handle].x, point.z-route.points[handle].z);
+            if (distance < bestDistance) { best = { route, handle }; bestDistance = distance; }
+          }
+        }
+        if (best) return best;
+        bestDistance = threshold;
+        for (let index = routes.length - 1; index >= 0; index--) {
+          const route = routes[index];
+          for (let i = 0; i <= 80; i++) {
+            const sample = cubic(route.points, i / 80);
+            const distance = Math.hypot(point.x-sample.x, point.z-sample.z);
+            if (distance < bestDistance) { best = { route, handle: -1 }; bestDistance = distance; }
+          }
+        }
+        return best;
+      }
+      function penHandleHit(kind, point) {
+        const list = penList(kind);
+        let best = null, distance = 10/camera.scale;
+        for (let index = list.length-1; index >= 0; index--) {
+          for (let handle = 0; handle < 4; handle++) {
+            const candidate = list[index].points[handle];
+            const value = Math.hypot(point.x-candidate.x,point.z-candidate.z);
+            if (value < distance) { best = { index, handle, anchor: copy(candidate), id: list[index].id }; distance = value; }
+          }
+        }
+        return best;
+      }
+      function resumeRoutePen() {
+        if (!routes.length) return null;
+        const points = routes.at(-1).points;
+        return { anchor: copy(points[3]), outgoing: { x: points[3].x-points[2].x, z: points[3].z-points[2].z }, manual: true, hasSegment: true };
+      }
+      function resumeCurvePen(point) {
+        const last = curves.at(-1);
+        if (!last || Math.hypot(last.points[3].x-point.x,last.points[3].z-point.z) > 10/camera.scale) return null;
+        const points = last.points;
+        return { anchor: copy(points[3]), outgoing: { x: points[3].x-points[2].x, z: points[3].z-points[2].z }, manual: true, hasSegment: true };
+      }
+      function penState(kind) { return kind === 'route' ? penRoute : penCurve; }
+      function setPenState(kind, state) { if (kind === 'route') penRoute = state; else penCurve = state; }
+      function penList(kind) { return kind === 'route' ? routes : curves; }
+      function penPreviewPoints(kind, state, end, endVector = null) {
+        const chord = { x: end.x-state.anchor.x, z: end.z-state.anchor.z };
+        const length = Math.hypot(chord.x,chord.z);
+        const previous = state.hasSegment ? penList(kind).at(-1) : null;
+        let startVector;
+        if (state.manual && state.outgoing) startVector = state.outgoing;
+        else if (previous) {
+          const before = previous.points[0];
+          const dx = end.x-before.x, dz = end.z-before.z;
+          const magnitude = Math.hypot(dx,dz) || 1;
+          startVector = { x: dx/magnitude*length/3, z: dz/magnitude*length/3 };
+        } else startVector = { x: chord.x/3, z: chord.z/3 };
+        const incoming = endVector ?? { x: chord.x/3, z: chord.z/3 };
+        return [copy(state.anchor), { x: state.anchor.x+startVector.x, z: state.anchor.z+startVector.z },
+          { x: end.x-incoming.x, z: end.z-incoming.z }, copy(end)];
+      }
+      function commitPen(kind, anchor, vector) {
+        let state = penState(kind);
+        const dragged = !!vector;
+        if (!state) {
+          setPenState(kind, { anchor: copy(anchor), outgoing: dragged ? vector : null, manual: dragged, hasSegment: false });
+          return;
+        }
+        const chord = { x: anchor.x-state.anchor.x, z: anchor.z-state.anchor.z };
+        if (Math.hypot(chord.x,chord.z) < .1) {
+          if (dragged) {
+            if (state.hasSegment) saveHistory();
+            state.outgoing = vector;
+            state.manual = true;
+            if (state.hasSegment) {
+              const points = penList(kind).at(-1).points;
+              points[2] = { x: state.anchor.x-vector.x, z: state.anchor.z-vector.z };
+              if (kind === 'route') rebuildRoute(); else rebuildCurves();
+            }
+          }
+          return;
+        }
+        saveHistory();
+        const list = penList(kind);
+        const previous = state.hasSegment ? list.at(-1) : null;
+        const points = penPreviewPoints(kind,state,anchor,vector);
+        if (previous && !state.manual) {
+          const before = previous.points[0];
+          const tangentX = anchor.x-before.x, tangentZ = anchor.z-before.z;
+          const magnitude = Math.hypot(tangentX,tangentZ) || 1;
+          const length = Math.hypot(state.anchor.x-before.x,state.anchor.z-before.z)/3;
+          previous.points[2] = { x: state.anchor.x-tangentX/magnitude*length, z: state.anchor.z-tangentZ/magnitude*length };
+        }
+        if (kind === 'route') {
+          routes.push({ id: nextRouteId++, points });
+          selectedRouteId = routes.at(-1).id;
+          rebuildRoute();
+        } else {
+          curves.push({ id: nextCurveId++, points, width: brushWidth(), type: $('material').value });
+          selectedCurveId = curves.at(-1).id;
+          rebuildCurves();
+        }
+        setPenState(kind, { anchor: copy(anchor), outgoing: dragged ? vector : null, manual: dragged, hasSegment: true });
+      }
+      function removeRoute(id) {
+        const index = routes.findIndex(route => route.id === id);
+        if (index < 0) return;
+        routes.splice(index, 1);
+        if (index > 0 && index < routes.length) {
+          const end = routes[index - 1].points[3];
+          const next = routes[index].points;
+          const dx = end.x - next[0].x, dz = end.z - next[0].z;
+          for (const handle of [0, 1]) { next[handle].x += dx; next[handle].z += dz; }
+        }
+        selectedRouteId = null;
+        penRoute = tool === 'route' ? resumeRoutePen() : null;
+        rebuildRoute();
+      }
+      function onPointerDown(event) {
+        if (mode === 'drive') { canvas.focus(); return; }
+        if (event.button !== 0 && event.button !== 1) return;
+        event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        const point = worldFromScreen(event.clientX, event.clientY);
+        pointer = point;
+        if (event.button === 1) {
+          drag = { kind: 'pan', sx: event.clientX, sy: event.clientY, cx: camera.x, cz: camera.z };
+          canvas.classList.add('panning');
+        } else if (tool === 'paint' || tool === 'erase') {
+          saveHistory();
+          drag = { kind: 'paint', last: point, erase: tool === 'erase' };
+          paintAt(point, drag.erase);
+        } else if (tool === 'bezier' || tool === 'route') {
+          if (event.detail >= 2) {
+            if (tool === 'bezier') penCurve = null;
+            else penRoute = resumeRoutePen();
+            canvas.releasePointerCapture(event.pointerId);
+            invalidate();
+            return;
+          }
+          if (tool === 'route' && !penRoute) penRoute = resumeRoutePen();
+          if (tool === 'bezier' && !penCurve) penCurve = resumeCurvePen(point);
+          const state = penState(tool);
+          const closeToAnchor = state && Math.hypot(point.x-state.anchor.x,point.z-state.anchor.z) < 10/camera.scale;
+          const hit = closeToAnchor ? null : penHandleHit(tool,point);
+          if (hit) {
+            if (tool === 'route') selectedRouteId = hit.id; else selectedCurveId = hit.id;
+            if (hit.handle === 1 || hit.handle === 2) {
+              saveHistory();
+              drag = { kind: tool === 'route' ? 'route' : 'curve', id: hit.id, handle: hit.handle,
+                start: point, original: copy(penList(tool)) };
+            } else drag = { kind: 'pen-tangent', penKind: tool, index: hit.index, handle: hit.handle,
+              anchor: hit.anchor, original: copy(penList(tool)), saved: false };
+            invalidate();
+            return;
+          }
+          drag = { kind: 'pen', penKind: tool, anchor: closeToAnchor ? copy(state.anchor) : point,
+            start: point, nearAnchor: !!closeToAnchor, vector: null, saved: false };
+          invalidate();
+        } else if (tool === 'spawn') {
+          saveHistory();
+          drag = { kind: 'spawn', start: point, yaw: spawn.yaw };
+          spawn = { x: point.x, z: point.z, yaw: spawn.yaw };
+          setPlaying(false);
+          resetBoat();
+        } else if (tool === 'select') {
+          const pathHit = routeHit(point);
+          const iceHit = pathHit ? null : curveHit(point);
+          selectedRouteId = pathHit?.route.id ?? null;
+          selectedCurveId = iceHit?.curve.id ?? null;
+          if (pathHit) {
+            saveHistory();
+            drag = { kind: 'route', id: pathHit.route.id, handle: pathHit.handle, start: point, original: copy(routes) };
+          } else if (iceHit) {
+            saveHistory();
+            drag = { kind: 'curve', id: iceHit.curve.id, handle: iceHit.handle, start: point, original: copy(curves) };
+          }
+          invalidate();
+        }
+      }
+      function onPointerMove(event) {
+        if (mode === 'drive') return;
+        const point = worldFromScreen(event.clientX, event.clientY);
+        pointer = point;
+        if (!drag) { invalidate(); return; }
+        if (drag.kind === 'pan') {
+          camera.x = drag.cx - (event.clientX - drag.sx) / camera.scale;
+          camera.z = drag.cz - (event.clientY - drag.sy) / camera.scale;
+        } else if (drag.kind === 'paint') {
+          paintSegment(drag.last, point, drag.erase);
+          drag.last = point;
+        } else if (drag.kind === 'spawn') {
+          const dx = point.x - drag.start.x, dz = point.z - drag.start.z;
+          if (Math.hypot(dx, dz) > .15) spawn.yaw = Math.fround(Math.atan2(-dx, dz) * 180 / Math.PI);
+          resetBoat();
+        } else if (drag.kind === 'pen') {
+          const dx = point.x-drag.anchor.x, dz = point.z-drag.anchor.z;
+          drag.vector = Math.hypot(dx,dz) >= 4/camera.scale ? { x: dx, z: dz } : null;
+          if (drag.nearAnchor && drag.vector) {
+            const state = penState(drag.penKind);
+            if (state) {
+              if (state.hasSegment && !drag.saved) { saveHistory(); drag.saved = true; }
+              state.outgoing = drag.vector;
+              state.manual = true;
+              if (state.hasSegment) {
+                const points = penList(drag.penKind).at(-1).points;
+                points[2] = { x: state.anchor.x-dx, z: state.anchor.z-dz };
+                if (drag.penKind === 'route') rebuildRoute(); else rebuildCurves();
+              }
+            }
+          }
+        } else if (drag.kind === 'pen-tangent') {
+          const dx = point.x-drag.anchor.x, dz = point.z-drag.anchor.z;
+          if (Math.hypot(dx,dz) >= 4/camera.scale) {
+            if (!drag.saved) { saveHistory(); drag.saved = true; }
+            const list = penList(drag.penKind);
+            const segment = list[drag.index];
+            if (drag.handle === 0) {
+              segment.points[1] = { x: drag.anchor.x+dx, z: drag.anchor.z+dz };
+              const previous = list[drag.index-1];
+              if (previous && Math.hypot(previous.points[3].x-drag.anchor.x,previous.points[3].z-drag.anchor.z) < 1e-4)
+                previous.points[2] = { x: drag.anchor.x-dx, z: drag.anchor.z-dz };
+            } else {
+              segment.points[2] = { x: drag.anchor.x-dx, z: drag.anchor.z-dz };
+              const next = list[drag.index+1];
+              if (next && Math.hypot(next.points[0].x-drag.anchor.x,next.points[0].z-drag.anchor.z) < 1e-4)
+                next.points[1] = { x: drag.anchor.x+dx, z: drag.anchor.z+dz };
+              if (drag.index === list.length-1) {
+                const state = penState(drag.penKind);
+                if (state?.hasSegment) { state.outgoing = { x:dx, z:dz }; state.manual = true; }
+              }
+            }
+            if (drag.penKind === 'route') rebuildRoute(); else rebuildCurves();
+          }
+        } else if (drag.kind === 'curve') {
+          curves = copy(drag.original);
+          const index = curves.findIndex(c => c.id === drag.id);
+          if (index >= 0) {
+            const curve = curves[index];
+            const dx = point.x - drag.start.x, dz = point.z - drag.start.z;
+            if (drag.handle >= 0) {
+              curve.points[drag.handle].x += dx;
+              curve.points[drag.handle].z += dz;
+            } else {
+              for (const p of curve.points) { p.x += dx; p.z += dz; }
+            }
+            const previous = index > 0 && Math.hypot(drag.original[index-1].points[3].x-drag.original[index].points[0].x,
+              drag.original[index-1].points[3].z-drag.original[index].points[0].z) < 1e-4 ? curves[index-1] : null;
+            const next = index+1 < curves.length && Math.hypot(drag.original[index].points[3].x-drag.original[index+1].points[0].x,
+              drag.original[index].points[3].z-drag.original[index+1].points[0].z) < 1e-4 ? curves[index+1] : null;
+            if (previous && (drag.handle === 0 || drag.handle < 0)) for (const handle of [2,3]) {
+              previous.points[handle].x += dx; previous.points[handle].z += dz;
+            }
+            if (next && (drag.handle === 3 || drag.handle < 0)) for (const handle of [0,1]) {
+              next.points[handle].x += dx; next.points[handle].z += dz;
+            }
+            if (previous && drag.handle === 1) previous.points[2] = {
+              x: previous.points[3].x-(curve.points[1].x-curve.points[0].x),
+              z: previous.points[3].z-(curve.points[1].z-curve.points[0].z)
+            };
+            if (next && drag.handle === 2) next.points[1] = {
+              x: next.points[0].x+(curve.points[3].x-curve.points[2].x),
+              z: next.points[0].z+(curve.points[3].z-curve.points[2].z)
+            };
+            if (index === curves.length-1 && drag.handle === 2 && penCurve?.hasSegment) {
+              penCurve.outgoing = { x:curve.points[3].x-curve.points[2].x, z:curve.points[3].z-curve.points[2].z };
+              penCurve.manual = true;
+            }
+            rebuildCurves();
+          }
+        } else if (drag.kind === 'route') {
+          routes = copy(drag.original);
+          const index = routes.findIndex(route => route.id === drag.id);
+          if (index >= 0) {
+            const points = routes[index].points;
+            const dx = point.x - drag.start.x, dz = point.z - drag.start.z;
+            const handles = drag.handle < 0 ? [0, 1, 2, 3] : [drag.handle];
+            for (const handle of handles) { points[handle].x += dx; points[handle].z += dz; }
+            if ((drag.handle === 0 || drag.handle < 0) && index > 0) {
+              for (const handle of [2, 3]) { routes[index - 1].points[handle].x += dx; routes[index - 1].points[handle].z += dz; }
+            }
+            if ((drag.handle === 3 || drag.handle < 0) && index + 1 < routes.length) {
+              for (const handle of [0, 1]) { routes[index + 1].points[handle].x += dx; routes[index + 1].points[handle].z += dz; }
+            }
+            if (drag.handle === 1 && index > 0) routes[index-1].points[2] = {
+              x: points[0].x-(points[1].x-points[0].x), z: points[0].z-(points[1].z-points[0].z)
+            };
+            if (drag.handle === 2 && index+1 < routes.length) routes[index+1].points[1] = {
+              x: points[3].x+(points[3].x-points[2].x), z: points[3].z+(points[3].z-points[2].z)
+            };
+            if (index === routes.length-1 && drag.handle === 2 && penRoute?.hasSegment) {
+              penRoute.outgoing = { x:points[3].x-points[2].x, z:points[3].z-points[2].z };
+              penRoute.manual = true;
+            }
+            rebuildRoute();
+          }
+        }
+        invalidate();
+      }
+      function onPointerUp(event) {
+        if (drag?.kind === 'pan') canvas.classList.remove('panning');
+        if (drag?.kind === 'pen') {
+          const point = worldFromScreen(event.clientX,event.clientY);
+          const dx = point.x-drag.anchor.x, dz = point.z-drag.anchor.z;
+          const vector = Math.hypot(dx,dz) >= 4/camera.scale ? { x:dx, z:dz } : null;
+          if (!drag.nearAnchor) commitPen(drag.penKind, drag.anchor, vector);
+          else if (vector && !drag.saved) commitPen(drag.penKind, drag.anchor, vector);
+        }
+        drag = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+        invalidate();
+      }
+      function serialize() {
+        return {
+          version: 3, subtickResolution: 0.2, subtickPhase,
+          tiles: [...tiles].map(([key, type]) => { const [x,z] = key.split(',').map(Number); return { x, z, type }; }),
+          curves: copy(curves), routes: copy(routes), spawn: copy(spawn), boat: copy(boat),
+          sequence: copy(sequence), sequenceStart: copy(sequenceStart), sequenceStartPhase, trace: copy(trace), viewport: copy(mode === 'drive' ? editorCamera : camera),
+          information: copy(information)
+        };
+      }
+      function validatePoint(p) {
+        if (!p || !finite(p.x) || !finite(p.z) || Math.abs(p.x) > 100000 || Math.abs(p.z) > 100000) throw Error('坐标无效');
+        return { x: p.x, z: p.z };
+      }
+      function loadData(data) {
+        if (!data || ![1,2,3].includes(data.version) || !Array.isArray(data.tiles) || !Array.isArray(data.curves)) throw Error('JSON 格式或版本无效');
+        if (data.version >= 2 && data.subtickResolution !== 0.2) throw Error('输入时间刻度无效');
+        if (data.curves.length > 1000) throw Error('地图数据过大');
+        const newTiles = new Map();
+        for (const t of data.tiles) {
+          if (!Number.isInteger(t.x) || !Number.isInteger(t.z) || Math.abs(t.x) > 100000 || Math.abs(t.z) > 100000 || ![...MATERIALS, 'ground'].includes(t.type)) throw Error('方块数据无效');
+          newTiles.set(tileKey(t.x, t.z), t.type);
+        }
+        const newCurves = data.curves.map((c, i) => {
+          if (!Array.isArray(c.points) || c.points.length !== 4 || !MATERIALS.has(c.type) || !Number.isSafeInteger(c.width) || c.width < 1) throw Error('曲线数据无效');
+          return { id: i + 1, points: c.points.map(validatePoint), width: c.width, type: c.type };
+        });
+        const newRoutes = data.version === 3 && Array.isArray(data.routes) ? data.routes.map((route, index) => {
+          if (!Array.isArray(route.points) || route.points.length !== 4) throw Error('路线数据无效');
+          return { id: index + 1, points: route.points.map(validatePoint) };
+        }) : [];
+        if (newRoutes.length > 300) throw Error('路线段数过多');
+        for (let index = 1; index < newRoutes.length; index++) {
+          const previous = newRoutes[index - 1].points[3], start = newRoutes[index].points[0];
+          if (Math.hypot(previous.x-start.x,previous.z-start.z) > 1e-4) throw Error('路线段未连接');
+        }
+        const newSpawnPoint = validatePoint(data.spawn);
+        if (!finite(data.spawn.yaw)) throw Error('船头角度无效');
+        const newSpawn = { ...newSpawnPoint, yaw: Math.fround(data.spawn.yaw) };
+        let newBoat = { x: newSpawn.x, z: newSpawn.z, vx: 0, vz: 0, yaw: newSpawn.yaw, omega: 0, tick: 0, friction: 0.6 };
+        if (data.boat) {
+          validatePoint(data.boat);
+          if (![data.boat.vx, data.boat.vz, data.boat.yaw, data.boat.omega].every(finite) || !Number.isSafeInteger(data.boat.tick) || data.boat.tick < 0) throw Error('船状态无效');
+          newBoat = { x: data.boat.x, z: data.boat.z, vx: data.boat.vx, vz: data.boat.vz, yaw: Math.fround(data.boat.yaw), omega: Math.fround(data.boat.omega), tick: data.boat.tick, friction: 0.6 };
+        }
+        let newSequenceStart = null;
+        if (data.sequenceStart) {
+          validatePoint(data.sequenceStart);
+          if (![data.sequenceStart.vx, data.sequenceStart.vz, data.sequenceStart.yaw, data.sequenceStart.omega].every(finite) || !Number.isSafeInteger(data.sequenceStart.tick) || data.sequenceStart.tick < 0) throw Error('录制起点无效');
+          newSequenceStart = { x: data.sequenceStart.x, z: data.sequenceStart.z, vx: data.sequenceStart.vx, vz: data.sequenceStart.vz, yaw: Math.fround(data.sequenceStart.yaw), omega: Math.fround(data.sequenceStart.omega), tick: data.sequenceStart.tick, friction: 0.6 };
+        }
+        const newSequence = Array.isArray(data.sequence) ? data.sequence.map(r => {
+          const units = data.version === 1 ? r.ticks * SUBTICKS_PER_TICK : r.units;
+          if (!Number.isInteger(units) || units < 1 || units > MAX_ROW_UNITS) throw Error('输入序列无效');
+          return { units, w: !!r.w, a: !!r.a, s: !!r.s, d: !!r.d };
+        }) : [];
+        if (newSequence.length > MAX_SEQUENCE_ROWS) throw Error('输入序列过长');
+        const newPhase = data.version >= 2 ? data.subtickPhase : 0;
+        const newStartPhase = data.version >= 2 ? data.sequenceStartPhase : 0;
+        if (![newPhase,newStartPhase].every(n => Number.isInteger(n) && n >= 0 && n < SUBTICKS_PER_TICK)) throw Error('子 tick 状态无效');
+        const newTrace = Array.isArray(data.trace) && data.trace.length <= 12000 ? data.trace.map(validatePoint) : [];
+        const v = data.viewport;
+        const newCamera = v && finite(v.x) && finite(v.z) && finite(v.scale) && v.scale > 0
+          ? { x: v.x, z: v.z, scale: v.scale, rotation: 0 } : { x: newBoat.x, z: newBoat.z, scale: 34, rotation: 0 };
+        const newInformation = copy(information);
+        if (data.information !== undefined) {
+          const value = data.information;
+          if (!value || typeof value.enabled !== 'boolean' || !value.layers || typeof value.layers !== 'object') throw Error('图形信息设置无效');
+          newInformation.enabled = value.enabled;
+          for (const key of Object.keys(newInformation.layers)) {
+            if (value.layers[key] === undefined) continue;
+            if (typeof value.layers[key] !== 'boolean') throw Error('图形信息设置无效');
+            newInformation.layers[key] = value.layers[key];
+          }
+        }
+        if (mode === 'drive') setMode('edit');
+        setPlaying(false);
+        tiles = newTiles;
+        curves = newCurves;
+        routes = newRoutes;
+        spawn = newSpawn;
+        boat = newBoat;
+        previousBoat = { ...boat };
+        sequence = compactSequence(newSequence);
+        sequenceStart = newSequenceStart;
+        subtickPhase = newPhase;
+        sequenceStartPhase = newStartPhase;
+        sequenceIndex = 0;
+        sequenceRemaining = 0;
+        sequenceElapsedUnits = 0;
+        timelineCenterUnits = 0;
+        timelineFollowing = false;
+        selectedSequenceIndex = sequence.length ? 0 : -1;
+        recording = false;
+        trace = newTrace.length ? newTrace : [{ x: boat.x, z: boat.z }];
+        camera = newCamera;
+        editorCamera = { ...camera };
+        nextCurveId = curves.length + 1;
+        nextRouteId = routes.length + 1;
+        selectedCurveId = null;
+        selectedRouteId = null;
+        penCurve = null;
+        penRoute = tool === 'route' ? resumeRoutePen() : null;
+        autoProgress = 0;
+        autoTargetProgress = 0;
+        autoVisualTargetProgress = 0;
+        autoLastDemand = 0;
+        inputMode = 'manual';
+        information.enabled = newInformation.enabled;
+        resetInformationAnimation();
+        Object.assign(information.layers,newInformation.layers);
+        solverVisualization = null;
+        updateInformationControls();
+        past.length = 0;
+        future.length = 0;
+        rebuildCurves();
+        rebuildRoute();
+        renderSequence();
+        updateButtons();
+        invalidate();
+      }
+      function compactSequence(rows) {
+        const merged = [];
+        for (const row of rows) {
+          let remaining = row.units;
+          while (remaining > 0) {
+            const previous = merged.at(-1);
+            if (previous && previous.units < MAX_ROW_UNITS && SEQUENCE_KEYS.every(key => previous[key] === row[key])) {
+              const added = Math.min(remaining, MAX_ROW_UNITS - previous.units);
+              previous.units += added;
+              remaining -= added;
+            } else {
+              const added = Math.min(remaining, MAX_ROW_UNITS);
+              merged.push({ units: added, w: row.w, a: row.a, s: row.s, d: row.d });
+              remaining -= added;
+            }
+          }
+        }
+        return merged;
+      }
+      function rowIndexAt(units) {
+        if (!timelineRows.length) return -1;
+        let low = 0, high = timelineRows.length;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (units < timelineRows[middle].end) high = middle;
+          else low = middle + 1;
+        }
+        return Math.min(low, timelineRows.length - 1);
+      }
+      function renderSequenceEditor() {
+        const row = sequence[selectedSequenceIndex];
+        $('sequence-selected').textContent = row ? `段 ${selectedSequenceIndex + 1} / ${sequence.length}` : '段 0';
+        $('sequence-duration').disabled = !row;
+        $('sequence-duration').value = row ? (row.units / SUBTICKS_PER_TICK).toFixed(1) : '';
+        $('sequence-remove').disabled = !row;
+        $('sequence-run').disabled = !sequence.length;
+        $('sequence-add').disabled = sequence.length >= MAX_SEQUENCE_ROWS;
+        for (const button of document.querySelectorAll('[data-sequence-key]')) {
+          button.disabled = !row;
+          button.setAttribute('aria-pressed', String(!!row?.[button.dataset.sequenceKey]));
+        }
+      }
+      function renderSequence() {
+        timelineRows = [];
+        timelineRuns = { w: [], a: [], s: [], d: [] };
+        let units = 0;
+        for (const row of sequence) {
+          const start = units;
+          units += row.units;
+          timelineRows.push({ start, end: units });
+          for (const key of SEQUENCE_KEYS) {
+            if (!row[key]) continue;
+            const runs = timelineRuns[key];
+            const previous = runs.at(-1);
+            if (previous?.end === start) previous.end = units;
+            else runs.push({ start, end: units });
+          }
+        }
+        timelineTotalUnits = units;
+        timelineCenterUnits = clamp(timelineCenterUnits, 0, units);
+        selectedSequenceIndex = sequence.length ? clamp(selectedSequenceIndex, 0, sequence.length - 1) : -1;
+        renderSequenceEditor();
+        drawTimeline();
+        invalidate();
+      }
+      function updateSequenceHighlight() {
+        if (inputMode === 'sequence' && sequence.length) {
+          selectedSequenceIndex = Math.min(sequenceIndex, sequence.length - 1);
+          renderSequenceEditor();
+        }
+        drawTimeline();
+      }
+      function stopSequenceForEdit() {
+        if (inputMode === 'sequence') {
+          if (playing) setPlaying(false);
+          inputMode = 'manual';
+          sequenceIndex = 0;
+          sequenceRemaining = 0;
+        }
+        timelineFollowing = false;
+      }
+      function editSequence(edit, selectedUnits) {
+        stopSequenceForEdit();
+        saveHistory();
+        edit();
+        sequence = compactSequence(sequence);
+        renderSequence();
+        selectedSequenceIndex = rowIndexAt(selectedUnits);
+        renderSequenceEditor();
+        drawTimeline();
+      }
+      function drawTimeline() {
+        if ($('sequence-panel').hidden) return;
+        const width = sequenceCanvas.clientWidth;
+        const height = sequenceCanvas.clientHeight;
+        if (!width || !height) return;
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
+        if (sequenceCanvas.width !== pixelWidth || sequenceCanvas.height !== pixelHeight) {
+          sequenceCanvas.width = pixelWidth;
+          sequenceCanvas.height = pixelHeight;
+        }
+        sequenceCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const context = sequenceCtx;
+        const laneWidth = (width - TIMELINE_GUTTER) / SEQUENCE_KEYS.length;
+        const pixelsPerUnit = timelinePixelsPerTick / SUBTICKS_PER_TICK;
+        const middle = height / 2;
+        const yAt = units => middle + (units - timelineCenterUnits) * pixelsPerUnit;
+        context.clearRect(0, 0, width, height);
+        context.fillStyle = '#1e1e1e';
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = '#202022';
+        context.fillRect(0, 0, TIMELINE_GUTTER, height);
+        for (let lane = 0; lane < SEQUENCE_KEYS.length; lane++) {
+          if (lane % 2) {
+            context.fillStyle = '#202022';
+            context.fillRect(TIMELINE_GUTTER + lane * laneWidth, 0, laneWidth, height);
+          }
+        }
+        if (selectedSequenceIndex >= 0) {
+          const selected = timelineRows[selectedSequenceIndex];
+          const top = Math.max(0, yAt(selected.start));
+          const bottom = Math.min(height, yAt(selected.end));
+          if (bottom > top) {
+            context.fillStyle = '#24313c';
+            context.fillRect(TIMELINE_GUTTER, top, width - TIMELINE_GUTTER, bottom - top);
+          }
+        }
+        const startUnits = Math.max(0, timelineCenterUnits - middle / pixelsPerUnit);
+        const endUnits = Math.min(timelineTotalUnits, timelineCenterUnits + middle / pixelsPerUnit);
+        const desiredStep = 36 / pixelsPerUnit;
+        const magnitude = 10 ** Math.floor(Math.log10(desiredStep));
+        const stepUnits = [1, 2, 5, 10].map(n => n * magnitude).find(n => n >= desiredStep) ?? 10 * magnitude;
+        context.font = '11px "Segoe UI", sans-serif';
+        context.textAlign = 'right';
+        context.textBaseline = 'middle';
+        for (let units = Math.ceil(startUnits / stepUnits) * stepUnits; units <= endUnits; units += stepUnits) {
+          const y = Math.round(yAt(units)) + .5;
+          context.strokeStyle = '#33363a';
+          context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
+          if (Math.abs(y - middle) > 22) {
+            context.fillStyle = '#85898e';
+            context.fillText((units / SUBTICKS_PER_TICK).toFixed(1), TIMELINE_GUTTER - 7, y - 9);
+          }
+        }
+        context.strokeStyle = '#3a3d41';
+        for (let lane = 0; lane <= SEQUENCE_KEYS.length; lane++) {
+          const x = Math.round(TIMELINE_GUTTER + lane * laneWidth) + .5;
+          context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
+        }
+        context.strokeStyle = '#41464b';
+        for (const row of timelineRows) {
+          const y = yAt(row.start);
+          if (y > height) break;
+          if (y < 0) continue;
+          context.beginPath(); context.moveTo(TIMELINE_GUTTER, Math.round(y) + .5); context.lineTo(width, Math.round(y) + .5); context.stroke();
+        }
+        for (let lane = 0; lane < SEQUENCE_KEYS.length; lane++) {
+          const key = SEQUENCE_KEYS[lane];
+          const x = TIMELINE_GUTTER + lane * laneWidth + 4;
+          const barWidth = laneWidth - 8;
+          for (const run of timelineRuns[key]) {
+            const start = yAt(run.start), end = yAt(run.end);
+            if (end <= 0) continue;
+            if (start >= height) break;
+            let top = start + 1, bottom = end - 1;
+            if (bottom <= top) { top = start; bottom = end; }
+            const visibleTop = Math.max(0, top), visibleBottom = Math.min(height, bottom);
+            if (visibleBottom <= visibleTop) continue;
+            context.fillStyle = '#15547b';
+            context.fillRect(x, visibleTop, barWidth, visibleBottom - visibleTop);
+            context.strokeStyle = '#3b91bd';
+            context.strokeRect(x + .5, visibleTop + .5, barWidth - 1, Math.max(0, visibleBottom - visibleTop - 1));
+            if (visibleBottom - visibleTop >= 11) {
+              context.save();
+              context.beginPath(); context.rect(x, visibleTop, barWidth, visibleBottom - visibleTop); context.clip();
+              context.fillStyle = '#f3f7fa';
+              context.font = '600 12px "Segoe UI", sans-serif';
+              context.textAlign = 'center'; context.textBaseline = 'middle';
+              context.fillText(key.toUpperCase(), x + barWidth / 2, (visibleTop + visibleBottom) / 2);
+              context.restore();
+            }
+          }
+        }
+        $('sequence-time-value').textContent = (Math.floor(timelineCenterUnits + 1e-8) / SUBTICKS_PER_TICK).toFixed(1);
+      }
+      function runSequence() {
+        if (!sequence.length) return;
+        if (inputMode === 'auto') { if (playing) setPlaying(false); recording = false; renderSequence(); }
+        if (sequenceStart) {
+          boat = copy(sequenceStart);
+          boat.friction = physics.frictionAt(boat.x,boat.z,terrainAt);
+          previousBoat = { ...boat };
+          trace = [{ x:boat.x, z:boat.z }];
+          lastKeys = EMPTY_KEYS;
+          subtickPhase = sequenceStartPhase;
+        } else resetBoat();
+        inputMode = 'sequence';
+        sequenceIndex = 0;
+        sequenceRemaining = 0;
+        sequenceElapsedUnits = 0;
+        timelineCenterUnits = 0;
+        timelineFollowing = true;
+        updateSequenceHighlight();
+        setPlaying(true);
+      }
+      function drawGrid() {
+        const corners = [worldFromScreen(0,0),worldFromScreen(innerWidth,0),worldFromScreen(0,innerHeight),worldFromScreen(innerWidth,innerHeight)];
+        const left = Math.min(...corners.map(p => p.x));
+        const right = Math.max(...corners.map(p => p.x));
+        const top = Math.min(...corners.map(p => p.z));
+        const bottom = Math.max(...corners.map(p => p.z));
+        const x0 = Math.floor(left)-1, x1 = Math.ceil(right)+1, z0 = Math.floor(top)-1, z1 = Math.ceil(bottom)+1;
+        ctx.save();
+        ctx.translate(innerWidth/2,innerHeight/2);
+        ctx.rotate(camera.rotation);
+        ctx.scale(camera.scale,camera.scale);
+        ctx.translate(-camera.x,-camera.z);
+        if (camera.scale >= 6) {
+          for (let x = x0; x < x1; x++) {
+            for (let z = z0; z < z1; z++) {
+              const type = terrainAt(x, z);
+              if (type === 'ground') continue;
+              ctx.fillStyle = COLORS[type];
+              ctx.fillRect(x,z,1.002,1.002);
+              if (camera.scale >= 17) {
+                ctx.strokeStyle = '#1e1e1e55'; ctx.lineWidth = 1/camera.scale;
+                ctx.strokeRect(x,z,1,1);
+              }
+            }
+          }
+        } else {
+          ctx.lineCap = 'round';
+          for (const curve of curves) {
+            const p = curve.points;
+            ctx.beginPath(); ctx.moveTo(p[0].x,p[0].z);
+            ctx.bezierCurveTo(p[1].x,p[1].z,p[2].x,p[2].z,p[3].x,p[3].z);
+            ctx.strokeStyle = COLORS[curve.type];
+            ctx.lineWidth = Math.max(curve.width, 1/camera.scale);
+            ctx.stroke();
+          }
+          ctx.lineCap = 'butt';
+          for (const [key,type] of tiles) {
+            const [x,z] = key.split(',').map(Number);
+            if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+            ctx.fillStyle = type === 'ground' ? '#1e1e1e' : COLORS[type];
+            ctx.fillRect(x,z,1.002,1.002);
+          }
+        }
+        const desiredStep = 24/camera.scale;
+        const power = 10**Math.floor(Math.log10(desiredStep));
+        const gridStep = Math.max(1, ([1,2,5,10].find(multiplier => multiplier*power >= desiredStep) ?? 10)*power);
+        ctx.lineWidth = 1/camera.scale;
+        for (let x = Math.ceil(left/gridStep)*gridStep; x <= right; x += gridStep) {
+          ctx.strokeStyle = Math.abs(x) < gridStep/2 ? '#5b6870' : gridStep >= 1 && Math.abs(x % 5) < gridStep/100 ? '#3e3e3e' : '#303030';
+          ctx.beginPath(); ctx.moveTo(x,top-1); ctx.lineTo(x,bottom+1); ctx.stroke();
+        }
+        for (let z = Math.ceil(top/gridStep)*gridStep; z <= bottom; z += gridStep) {
+          ctx.strokeStyle = Math.abs(z) < gridStep/2 ? '#5b6870' : gridStep >= 1 && Math.abs(z % 5) < gridStep/100 ? '#3e3e3e' : '#303030';
+          ctx.beginPath(); ctx.moveTo(left-1,z); ctx.lineTo(right+1,z); ctx.stroke();
+        }
+        ctx.restore();
+        if (mode === 'edit' && camera.scale >= 25) {
+          ctx.fillStyle = '#707070'; ctx.font = '10px Consolas, monospace';
+          for (let x = Math.ceil(left/5)*5; x <= right; x += 5) {
+            const p = screenFromWorld(x, 0); ctx.fillText(String(x), p.x+3, innerHeight-52);
+          }
+          for (let z = Math.ceil(top/5)*5; z <= bottom; z += 5) {
+            const p = screenFromWorld(0, z); ctx.fillText(String(z), 7, p.y-3);
+          }
+        }
+      }
+      function drawCurvePath(points, stroke, width, dashed) {
+        const a = screenFromWorld(points[0].x, points[0].z);
+        const b = screenFromWorld(points[1].x, points[1].z);
+        const c = screenFromWorld(points[2].x, points[2].z);
+        const d = screenFromWorld(points[3].x, points[3].z);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.bezierCurveTo(b.x,b.y,c.x,c.y,d.x,d.y);
+        ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.setLineDash(dashed ? [6,4] : []); ctx.stroke(); ctx.setLineDash([]);
+      }
+      function drawPenPreview(kind, color, width) {
+        const state = penState(kind);
+        const active = drag?.kind === 'pen' && drag.penKind === kind;
+        const end = active ? drag.anchor : pointer;
+        if (state) {
+          const anchor = screenFromWorld(state.anchor.x,state.anchor.z);
+          ctx.fillStyle = color;
+          ctx.fillRect(anchor.x-4,anchor.y-4,8,8);
+          if (end && Math.hypot(end.x-state.anchor.x,end.z-state.anchor.z) > .1) {
+            drawCurvePath(penPreviewPoints(kind,state,end,active ? drag.vector : null),color,width,true);
+          }
+          if (state.manual && state.outgoing) {
+            const handle = screenFromWorld(state.anchor.x+state.outgoing.x,state.anchor.z+state.outgoing.z);
+            ctx.strokeStyle = color; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(anchor.x,anchor.y); ctx.lineTo(handle.x,handle.y); ctx.stroke();
+            ctx.fillRect(handle.x-3,handle.y-3,6,6);
+          }
+        }
+        if (active && drag.vector) {
+          const anchor = screenFromWorld(drag.anchor.x,drag.anchor.z);
+          const handle = screenFromWorld(drag.anchor.x+drag.vector.x,drag.anchor.z+drag.vector.z);
+          const opposite = screenFromWorld(drag.anchor.x-drag.vector.x,drag.anchor.z-drag.vector.z);
+          ctx.strokeStyle = color; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(opposite.x,opposite.y); ctx.lineTo(handle.x,handle.y); ctx.stroke();
+          ctx.fillStyle = color;
+          ctx.fillRect(anchor.x-4,anchor.y-4,8,8);
+          ctx.fillRect(handle.x-3,handle.y-3,6,6);
+          ctx.fillRect(opposite.x-3,opposite.y-3,6,6);
+        }
+      }
+      function drawCurves() {
+        const selected = curves.find(c => c.id === selectedCurveId);
+        if (selected) {
+          const p = selected.points.map(q => screenFromWorld(q.x,q.z));
+          ctx.strokeStyle = '#b8c6cf'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y); ctx.lineTo(p[1].x,p[1].y); ctx.moveTo(p[2].x,p[2].y); ctx.lineTo(p[3].x,p[3].y); ctx.stroke();
+          drawCurvePath(selected.points, '#d7e5ed', 2, true);
+          p.forEach((q,i) => {
+            ctx.fillStyle = i === 0 || i === 3 ? '#d7e5ed' : '#7cb7d6';
+            ctx.fillRect(q.x-5,q.y-5,10,10);
+            ctx.strokeStyle = '#162b36'; ctx.strokeRect(q.x-5.5,q.y-5.5,11,11);
+          });
+        }
+        if (tool === 'bezier') drawPenPreview('bezier','#9cdcfe',Math.max(2,brushWidth()*camera.scale));
+      }
+      function drawRoutes(projection) {
+        for (const route of routes) drawCurvePath(route.points, route.id === selectedRouteId ? '#d6b2dd' : '#b48ac0', route.id === selectedRouteId ? 2.6 : 2, false);
+        const selected = routes.find(route => route.id === selectedRouteId);
+        if (selected) {
+          const points = selected.points.map(point => screenFromWorld(point.x, point.z));
+          ctx.strokeStyle = '#74637b'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(points[0].x,points[0].y); ctx.lineTo(points[1].x,points[1].y);
+          ctx.moveTo(points[2].x,points[2].y); ctx.lineTo(points[3].x,points[3].y); ctx.stroke();
+          for (let i = 0; i < points.length; i++) {
+            ctx.fillStyle = i === 0 || i === 3 ? '#d6b2dd' : '#9474a0';
+            ctx.fillRect(points[i].x-5,points[i].y-5,10,10);
+          }
+        }
+        if (tool === 'route') drawPenPreview('route','#c8a0d0',2);
+        if (!projection) return;
+        const p = projection;
+        const screen = screenFromWorld(p.x, p.z);
+        const tip = screenFromWorld(p.x + p.tx, p.z + p.tz);
+        drawArrow(screen, tip, '#dcdcaa', 2.2);
+        ctx.fillStyle = '#dcdcaa';
+        ctx.beginPath(); ctx.arc(screen.x,screen.y,4.5,0,Math.PI*2); ctx.fill();
+        ctx.font = '12px Consolas, monospace';
+        ctx.fillText('p',screen.x+8,screen.y-8);
+      }
+      function drawTrace(visualBoat) {
+        if (!trace.length) return;
+        ctx.beginPath();
+        let p = screenFromWorld(trace[0].x, trace[0].z);
+        ctx.moveTo(p.x,p.y);
+        for (let i = 1; i < trace.length; i++) {
+          p = screenFromWorld(trace[i].x, trace[i].z);
+          ctx.lineTo(p.x,p.y);
+        }
+        if (playing) { p = screenFromWorld(visualBoat.x,visualBoat.z); ctx.lineTo(p.x,p.y); }
+        ctx.strokeStyle = '#fc6255'; ctx.lineWidth = 2; ctx.stroke();
+      }
+      function drawArrow(from, to, color, lineWidth = 2.5) {
+        const dx = to.x-from.x, dy = to.y-from.y;
+        const length = Math.hypot(dx,dy);
+        if (length < 1e-6) return;
+        const ux = dx/length, uy = dy/length;
+        const headLength = Math.min(14,length*.45);
+        const halfWidth = headLength*.3;
+        const baseX = to.x-ux*headLength, baseY = to.y-uy*headLength;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'butt';
+        ctx.beginPath(); ctx.moveTo(from.x,from.y);
+        ctx.lineTo(baseX+ux*Math.min(2,headLength*.3),baseY+uy*Math.min(2,headLength*.3));
+        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(to.x,to.y);
+        ctx.lineTo(baseX-uy*halfWidth,baseY+ux*halfWidth);
+        ctx.lineTo(baseX+uy*halfWidth,baseY-ux*halfWidth);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      function drawBoat(visualBoat) {
+        const origin = screenFromWorld(spawn.x,spawn.z);
+        if (Math.hypot(visualBoat.x-spawn.x,visualBoat.z-spawn.z) > .15) {
+          ctx.strokeStyle = '#858585'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(origin.x,origin.y,9,0,Math.PI*2); ctx.stroke();
+        }
+        const p = screenFromWorld(visualBoat.x,visualBoat.z);
+        const speed = Math.hypot(visualBoat.vx,visualBoat.vz);
+        const yaw = visualBoat.yaw * Math.PI / 180;
+        const headingTip = screenFromWorld(visualBoat.x-Math.sin(yaw)*1.7,visualBoat.z+Math.cos(yaw)*1.7);
+        drawArrow(p,headingTip,'#58c4dd',2.7);
+        if (speed > .003) {
+          const length = Math.min(4, speed * 3);
+          const velocityTip = screenFromWorld(visualBoat.x+visualBoat.vx/speed*length,visualBoat.z+visualBoat.vz/speed*length);
+          drawArrow(p,velocityTip,'#fc6255',2.3);
+        }
+        ctx.fillStyle = '#f5f5f5';
+        ctx.beginPath(); ctx.arc(p.x,p.y,5.5,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#f5f5f5'; ctx.font = '12px Consolas, monospace';
+        ctx.fillText('b',p.x+8,p.y+16);
+      }
+      function informationRay(origin, dx, dz, length) {
+        const tip = screenFromWorld(origin.x+dx,origin.z+dz);
+        const start = screenFromWorld(origin.x,origin.z);
+        const magnitude = Math.hypot(tip.x-start.x,tip.y-start.y);
+        return magnitude > 1e-8
+          ? { x: start.x+(tip.x-start.x)/magnitude*length, y: start.y+(tip.y-start.y)/magnitude*length }
+          : start;
+      }
+      function informationLine(from, to, color, dashed = false, width = 1) {
+        ctx.strokeStyle = color; ctx.lineWidth = width;
+        ctx.setLineDash(dashed ? [4,4] : []);
+        ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(to.x,to.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      function informationDot(point, color, radius = 2.5) {
+        ctx.fillStyle = color; ctx.beginPath(); ctx.arc(point.x,point.y,radius,0,Math.PI*2); ctx.fill();
+      }
+      function informationSector(center, first, second, radius, color) {
+        const a = Math.atan2(first.y-center.y,first.x-center.x);
+        const b = Math.atan2(second.y-center.y,second.x-center.x);
+        const sweep = Math.atan2(Math.sin(b-a),Math.cos(b-a));
+        const opacity = ctx.globalAlpha;
+        ctx.save(); ctx.fillStyle = color; ctx.globalAlpha = opacity*.14;
+        ctx.beginPath(); ctx.moveTo(center.x,center.y);
+        ctx.arc(center.x,center.y,radius,a,a+sweep,sweep < 0); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = opacity*.85; ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(center.x,center.y,radius,a,a+sweep,sweep < 0); ctx.stroke();
+        ctx.restore();
+      }
+      function informationChart(center, above, width, height) {
+        const right = center.x+80+width <= innerWidth-12;
+        const key = above ? 'search.chart' : 'cumulative.chart';
+        const x = clamp(smoothInformation(key+'.x',right ? center.x+80 : center.x-80-width),12,Math.max(12,innerWidth-width-12));
+        const preferredY = above ? center.y-height-28 : center.y+40;
+        const y = clamp(smoothInformation(key+'.y',preferredY),12,Math.max(12,innerHeight-height-64));
+        const corner = { x: smoothInformation(key+'.cornerX',right ? x : x+width), y: above ? y+height : y };
+        informationLine(center,corner,'#666666',true);
+        ctx.fillStyle = '#1e1e1eed'; ctx.fillRect(x,y,width,height);
+        ctx.strokeStyle = '#454545'; ctx.lineWidth = 1; ctx.strokeRect(x+.5,y+.5,width-1,height-1);
+        return { x: x+10, y: y+10, width: width-20, height: height-20 };
+      }
+      function currentSolverVisualization() {
+        if (inputMode !== 'auto' || !routeSegments.length ||
+            !['thrust','cumulative','search','rotation'].some(key => information.layers[key])) return null;
+        const anchor = solverVisualization?.state;
+        if (!anchor || solverVisualization.revision !== informationRevision ||
+            solverVisualization.targetProgress !== autoTargetProgress ||
+            ['x','z','vx','vz','yaw','omega','tick'].some(key => anchor[key] !== boat[key])) {
+          // Read-only inspection also works when paused. It must not advance p,
+          // consume the throttle accumulator, record input, or move the boat.
+          autoControl(boat,true);
+        }
+        return solverVisualization;
+      }
+      function positionInformationPanel() {
+        const panel = $('information-panel');
+        if (panel.hidden || document.body.classList.contains('ui-hidden')) return;
+        const button = $('information-toggle').getBoundingClientRect();
+        const toolbar = document.querySelector('.toolbar').getBoundingClientRect();
+        const top = toolbar.bottom+7;
+        panel.style.left = `${clamp(button.left,12,Math.max(12,innerWidth-panel.offsetWidth-12))}px`;
+        panel.style.top = `${top}px`;
+        panel.style.maxHeight = `${Math.max(30,innerHeight-top-64)}px`;
+      }
+      function updateInformationControls() {
+        $('information-toggle').setAttribute('aria-pressed',String(information.enabled));
+        $('information-toggle').setAttribute('aria-expanded',String(information.enabled));
+        $('information-panel').hidden = !information.enabled;
+        for (const input of document.querySelectorAll('[data-information]')) input.checked = information.layers[input.dataset.information];
+        positionInformationPanel();
+        invalidate();
+      }
+      function resetInformationAnimation() {
+        informationAnimationValues.clear();
+        informationAnimationUpdated.clear();
+        informationAnimationTime = 0;
+        informationMoving = false;
+        lastInformationSolvers.clear();
+        lastInformationProjection = null;
+        lastInformationTarget = null;
+        informationWidthSample = null;
+        informationDynamics = null;
+        informationCoastPrediction = null;
+        informationChord = null;
+        informationContactTiles.clear();
+        informationContactCounts = { blue: 0, packed: 0, ice: 0, ground: 0 };
+        informationContactRetention = 0;
+      }
+      function smoothInformation(key, target, angular = false, initial = target) {
+        if (informationAnimationUpdated.has(key)) return informationAnimationValues.get(key);
+        informationAnimationUpdated.add(key);
+        const previous = informationAnimationValues.has(key) ? informationAnimationValues.get(key) : initial;
+        const difference = angular ? yawDifference(target,previous) : target-previous;
+        const tolerance = angular ? .001 : .0001;
+        const settled = Math.abs(difference) <= tolerance;
+        const value = settled ? previous+difference : previous+difference*(1-Math.exp(-informationAnimationDt*14));
+        informationAnimationValues.set(key,value);
+        if (!settled) informationMoving = true;
+        return value;
+      }
+      function smoothInformationRoute(key, point) {
+        if (!point) return null;
+        const angle = smoothInformation(key+'.angle',Math.atan2(point.tz,point.tx)*180/Math.PI,true)*Math.PI/180;
+        return { ...point, x: smoothInformation(key+'.x',point.x), z: smoothInformation(key+'.z',point.z),
+          tx: Math.cos(angle), tz: Math.sin(angle) };
+      }
+      function toggleUiVisibility() {
+        const hidden = document.body.classList.toggle('ui-hidden');
+        if (hidden && document.activeElement !== $('play')) canvas.focus({ preventScroll: true });
+        if (!hidden) positionInformationPanel();
+        invalidate();
+      }
+      function drawInformation(visualBoat, projection, target) {
+        const layers = information.layers;
+        const rawProjection = projection ?? lastInformationProjection;
+        const rawSpeed = Math.hypot(visualBoat.vx,visualBoat.vz);
+        const currentSolver = information.enabled ? currentSolverVisualization() : null;
+        if (currentSolver) for (const key of ['thrust','cumulative','search','rotation']) {
+          if (layers[key]) lastInformationSolvers.set(key,currentSolver);
+        }
+        if (projection) lastInformationProjection = projection;
+        if (target) lastInformationTarget = target;
+        const available = { direction: !!target, slip: rawSpeed > 1e-8,
+          velocity: !!target && rawSpeed > 1e-8, clearance: true,
+          thrust: !!currentSolver, cumulative: !!currentSolver, search: !!currentSolver, rotation: !!currentSolver,
+          projection: !!projection, curvature: !!projection, chord: !!target,
+          contacts: true, acceleration: true, coast: Math.hypot(boat.vx,boat.vz) > 1e-8 };
+        const opacity = {};
+        for (const key of Object.keys(layers)) opacity[key] = smoothInformation('opacity.'+key,
+          information.enabled && layers[key] && available[key] ? 1 : 0,false,0);
+        if (!Object.values(opacity).some(value => value > 0)) return;
+        if (information.enabled && (layers.acceleration || layers.coast)) collectInformationDynamics();
+        if (information.enabled && layers.contacts) collectInformationContacts(visualBoat);
+        if (information.enabled && layers.chord && target) {
+          informationChord = Array.from({ length: 16 },(_,index) => {
+            const t = index/15;
+            const dx = (target.x-visualBoat.x)*t, dz = (target.z-visualBoat.z)*t;
+            return { dx, dz, safe: hullOnIce(visualBoat.x+dx,visualBoat.z+dz) };
+          });
+        }
+        const speed = smoothInformation('boat.speed',rawSpeed);
+        const routeOpacity = smoothInformation('route.opacity',projection ? 1 : 0,false,0);
+        const velocityYaw = smoothInformation('boat.velocityYaw',rawSpeed > 1e-8
+          ? Math.atan2(-visualBoat.vx,visualBoat.vz)*180/Math.PI
+          : (informationAnimationValues.get('boat.velocityYaw') ?? visualBoat.yaw),true)*Math.PI/180;
+        visualBoat = { ...visualBoat, vx: -Math.sin(velocityYaw)*speed, vz: Math.cos(velocityYaw)*speed,
+          yaw: smoothInformation('boat.yaw',visualBoat.yaw,true) };
+        projection = smoothInformationRoute('projection',projection ?? lastInformationProjection);
+        target = smoothInformationRoute('target',target ?? lastInformationTarget);
+        const motionOpacity = smoothInformation('boat.motionOpacity',rawSpeed > 1e-8 ? 1 : 0,false,0);
+        ctx.save(); ctx.lineCap = 'butt'; ctx.setLineDash([]);
+        const center = screenFromWorld(visualBoat.x,visualBoat.z);
+        const velocity = informationRay(visualBoat,visualBoat.vx,visualBoat.vz,74);
+        const yaw = visualBoat.yaw*Math.PI/180;
+        const bow = informationRay(visualBoat,-Math.sin(yaw),Math.cos(yaw),62);
+        const extraLayers = {
+          projection: () => projection && drawProjectionInformation(visualBoat,center,projection),
+          curvature: () => projection && drawCurvatureInformation(visualBoat,center,projection,rawProjection),
+          chord: () => drawChordInformation(visualBoat,center),
+          contacts: () => drawContactInformation(visualBoat,center),
+          acceleration: () => drawAccelerationInformation(visualBoat,center),
+          coast: () => drawCoastInformation(visualBoat,center)
+        };
+        for (const [key,paint] of Object.entries(extraLayers)) {
+          if (opacity[key] <= 0) continue;
+          ctx.save(); ctx.globalAlpha = opacity[key]; paint(); ctx.restore();
+        }
+        if (opacity.direction > 0 && target) {
+          ctx.save(); ctx.globalAlpha = opacity.direction;
+          const tangent = informationRay(visualBoat,target.tx,target.tz,74);
+          const p = screenFromWorld(target.x,target.z);
+          informationLine(center,p,'#dcdcaa55',true);
+          ctx.setLineDash([5,4]); drawArrow(center,tangent,'#dcdcaa',1.6); ctx.setLineDash([]);
+          if (motionOpacity > 0) {
+            ctx.save(); ctx.globalAlpha *= motionOpacity;
+            drawArrow(center,velocity,'#fc6255',1.6);
+            informationSector(center,tangent,velocity,44,'#dcdcaa');
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+        if (opacity.slip > 0) {
+          ctx.save(); ctx.globalAlpha = opacity.slip;
+          drawArrow(center,bow,'#58c4dd',1.6); drawArrow(center,velocity,'#fc6255',1.6);
+          informationSector(center,bow,velocity,28,'#58c4dd');
+          ctx.restore();
+        }
+        if (opacity.velocity > 0 && target && speed > 1e-8) {
+          ctx.save(); ctx.globalAlpha = opacity.velocity;
+          const along = visualBoat.vx*target.tx+visualBoat.vz*target.tz;
+          const nx = -target.tz, nz = target.tx;
+          const side = visualBoat.vx*nx+visualBoat.vz*nz;
+          const a = informationRay(visualBoat,along*target.tx,along*target.tz,74*Math.abs(along)/speed);
+          const b = informationRay(visualBoat,side*nx,side*nz,74*Math.abs(side)/speed);
+          informationLine(a,velocity,'#c8a0d080',true);
+          informationLine(b,velocity,'#dcdcaa80',true);
+          drawArrow(center,a,'#dcdcaa',2); drawArrow(center,b,'#c8a0d0',2);
+          drawArrow(center,velocity,'#fc6255',1.5);
+          ctx.restore();
+        }
+        if (opacity.clearance > 0) {
+          ctx.save(); ctx.globalAlpha = opacity.clearance;
+          const half = physics.HALF_WIDTH;
+          const corners = [[-half,-half],[half,-half],[half,half],[-half,half]]
+            .map(([x,z]) => screenFromWorld(visualBoat.x+x,visualBoat.z+z));
+          const safe = hullOnIce(visualBoat.x,visualBoat.z);
+          const safety = smoothInformation('clearance.safety',safe ? 1 : 0);
+          ctx.strokeStyle = `rgb(${244-63*safety},${135+71*safety},${113+55*safety})`; ctx.lineWidth = 1.5;
+          ctx.beginPath(); corners.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y)); ctx.closePath(); ctx.stroke();
+          if (projection && routeOpacity > 0) {
+            ctx.save(); ctx.globalAlpha *= routeOpacity;
+            const nx = -projection.tz, nz = projection.tx;
+            // Sample real geometry with a separate display cache. Interpolated
+            // coordinates must never populate the controller's width cache.
+            const widthKey = `${informationRevision}:${Math.round(rawProjection.s*2)}`;
+            if (informationWidthSample?.key !== widthKey) informationWidthSample = {
+              key: widthKey, width: routeHalfWidthAt(rawProjection,false)
+            };
+            const halfWidth = smoothInformation('clearance.halfWidth',informationWidthSample.width);
+            for (const sign of [-1,1]) {
+              const edge = { x: projection.x+nx*halfWidth*sign, z: projection.z+nz*halfWidth*sign };
+              informationLine(screenFromWorld(edge.x-projection.tx*1.5,edge.z-projection.tz*1.5),
+                screenFromWorld(edge.x+projection.tx*1.5,edge.z+projection.tz*1.5),'#ce9178',true,1.5);
+            }
+            const side = visualBoat.vx*nx+visualBoat.vz*nz;
+            const distance = side*Math.abs(side)/(2*.04);
+            const end = screenFromWorld(visualBoat.x+nx*distance,visualBoat.z+nz*distance);
+            drawArrow(center,end,'#ce9178',2);
+            if (Math.abs(distance) > 1e-8) informationDot(end,'#ce9178',3);
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+        for (const key of ['thrust','cumulative','search','rotation']) {
+          const solver = lastInformationSolvers.get(key);
+          if (opacity[key] <= 0 || !solver) continue;
+          ctx.save(); ctx.globalAlpha = opacity[key];
+          if (key === 'thrust') drawThrustInformation(visualBoat,center,solver);
+          if (key === 'cumulative') drawCumulativeInformation(visualBoat,center,solver);
+          if (key === 'search') drawSearchInformation(center,solver);
+          if (key === 'rotation') drawRotationInformation(visualBoat,center,solver);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+      function drawThrustInformation(visualBoat, center, solver) {
+        const { tx,tz,nx,nz,bestW,sideThrust } = solver;
+        const radius = 58;
+        const point = (x,z,key) => {
+          x = smoothInformation('thrust.'+key+'.x',x);
+          z = smoothInformation('thrust.'+key+'.z',z);
+          const tip = screenFromWorld(visualBoat.x+x,visualBoat.z+z);
+          return { x: center.x+(tip.x-center.x)/camera.scale*radius/.04,
+            y: center.y+(tip.y-center.y)/camera.scale*radius/.04 };
+        };
+        ctx.strokeStyle = '#c586c040'; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+        ctx.beginPath(); ctx.arc(center.x,center.y,radius,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+        const along = point(tx*bestW.parallel,tz*bestW.parallel,'along');
+        const side = point(nx*sideThrust,nz*sideThrust,'side');
+        const wanted = { x: along.x+side.x-center.x, y: along.y+side.y-center.y };
+        informationLine(along,wanted,'#c586c070',true); informationLine(side,wanted,'#c586c070',true);
+        drawArrow(center,along,'#d7ba7d',1.3); drawArrow(center,side,'#b5cea8',1.3);
+        drawArrow(center,wanted,'#c586c0',2.4);
+        const next = physics.step(solver.state,solver.keys,terrainAt);
+        // Subtract retained world momentum: only the actual control impulse remains.
+        const actual = point(next.vx-solver.state.vx*next.friction,next.vz-solver.state.vz*next.friction,'actual');
+        drawArrow(center,actual,'#58c4dd',2);
+        informationLine(wanted,actual,'#c586c0',true);
+        informationDot(actual,'#58c4dd',3);
+      }
+      function collectInformationDynamics() {
+        const keys = inputMode === 'auto' ? autoKeys : inputMode === 'sequence'
+          ? (sequence[sequenceIndex] ?? lastKeys) : manualKeys();
+        const key = [informationRevision,boat.x,boat.z,boat.vx,boat.vz,boat.yaw,boat.omega,boat.tick,
+          ...SEQUENCE_KEYS.map(name => Number(!!keys[name]))].join(':');
+        if (informationDynamics?.key !== key) informationDynamics = {
+          key, state: { ...boat }, next: physics.step(boat,keys,terrainAt)
+        };
+        if (information.layers.coast && informationCoastPrediction?.key !== key) {
+          const samples = [];
+          let predicted = { ...boat };
+          for (let tick = 0; tick < 24; tick++) {
+            predicted = physics.step(predicted,EMPTY_KEYS,terrainAt);
+            samples.push({ ...predicted, safe: hullOnIce(predicted.x,predicted.z) });
+          }
+          informationCoastPrediction = { key, state: { ...boat }, samples };
+        }
+      }
+      function collectInformationContacts(state) {
+        for (const tile of informationContactTiles.values()) tile.present = false;
+        const counts = { blue: 0, packed: 0, ice: 0, ground: 0 };
+        const half = physics.HALF_WIDTH;
+        for (let x = Math.floor(state.x-half); x < Math.ceil(state.x+half); x++) {
+          if (x+1 <= state.x-half || x >= state.x+half) continue;
+          for (let z = Math.floor(state.z-half); z < Math.ceil(state.z+half); z++) {
+            if (z+1 <= state.z-half || z >= state.z+half) continue;
+            const type = terrainAt(x,z), key = tileKey(x,z);
+            const tile = informationContactTiles.get(key) ?? { x, z };
+            Object.assign(tile,{ type, present: true });
+            informationContactTiles.set(key,tile);
+            counts[type]++;
+          }
+        }
+        informationContactCounts = counts;
+        informationContactRetention = physics.frictionAt(state.x,state.z,terrainAt);
+      }
+      function informationSafetyColor(key, safe) {
+        const weight = smoothInformation(key,safe ? 1 : 0);
+        return `rgb(${244-92*weight},${135+60*weight},${113+8*weight})`;
+      }
+      function informationHull(point, color, width = 1) {
+        const half = physics.HALF_WIDTH;
+        const corners = [[-half,-half],[half,-half],[half,half],[-half,half]]
+          .map(([x,z]) => screenFromWorld(point.x+x,point.z+z));
+        ctx.strokeStyle = color; ctx.lineWidth = width;
+        ctx.beginPath(); corners.forEach((corner,index) => index
+          ? ctx.lineTo(corner.x,corner.y) : ctx.moveTo(corner.x,corner.y));
+        ctx.closePath(); ctx.stroke();
+      }
+      function drawProjectionInformation(visualBoat, center, projection) {
+        const foot = screenFromWorld(projection.x,projection.z);
+        const before = screenFromWorld(projection.x-projection.tx*2,projection.z-projection.tz*2);
+        const after = screenFromWorld(projection.x+projection.tx*2,projection.z+projection.tz*2);
+        informationLine(before,after,'#e695b8',true,1.3);
+        informationLine(center,foot,'#e695b8',false,2);
+        informationDot(foot,'#e695b8',4);
+        const distance = Math.hypot(center.x-foot.x,center.y-foot.y);
+        if (distance > 1e-6) {
+          const size = Math.min(7,distance*.4);
+          const normal = { x: (center.x-foot.x)/distance*size, y: (center.y-foot.y)/distance*size };
+          const tangent = informationRay(projection,projection.tx,projection.tz,size);
+          const a = { x: foot.x+normal.x, y: foot.y+normal.y };
+          const b = { x: tangent.x+normal.x, y: tangent.y+normal.y };
+          informationLine(a,b,'#e695b8'); informationLine(b,tangent,'#e695b8');
+        }
+      }
+      function drawCurvatureInformation(visualBoat, center, projection, rawProjection) {
+        const curvature = smoothInformation('curvature.value',rawProjection.curvature);
+        const length = smoothInformation('curvature.length',Math.max(3,Math.hypot(boat.vx,boat.vz)*4));
+        const nx = -projection.tz, nz = projection.tx;
+        let previous = center;
+        for (let index = 1; index <= 24; index++) {
+          const distance = length*index/24;
+          const turn = curvature*distance;
+          const along = Math.abs(curvature) > 1e-8 ? Math.sin(turn)/curvature : distance;
+          const side = Math.abs(curvature) > 1e-8 ? 2*Math.sin(turn/2)**2/curvature : 0;
+          const next = screenFromWorld(visualBoat.x+projection.tx*along+nx*side,
+            visualBoat.z+projection.tz*along+nz*side);
+          // Alternating segments depict local constant curvature, not a rollout.
+          if (index%2) informationLine(previous,next,'#e5c07b',false,1.6);
+          previous = next;
+        }
+        const alongSpeed = Math.max(0,boat.vx*rawProjection.tx+boat.vz*rawProjection.tz);
+        const demand = alongSpeed*alongSpeed*rawProjection.curvature;
+        const amount = smoothInformation('curvature.demand',demand/(.04+Math.abs(demand)));
+        const wanted = informationRay(visualBoat,nx*amount,nz*amount,80*Math.abs(amount));
+        drawArrow(center,wanted,informationSafetyColor('curvature.authority',Math.abs(demand) <= .04),2);
+        const tangent = informationRay(visualBoat,projection.tx,projection.tz,4);
+        const dx = tangent.x-center.x, dy = tangent.y-center.y;
+        for (const sign of [-1,1]) {
+          const mark = informationRay(visualBoat,nx*sign,nz*sign,40);
+          informationLine({ x:mark.x-dx,y:mark.y-dy },{ x:mark.x+dx,y:mark.y+dy },'#e5c07b',false,1.4);
+        }
+      }
+      function drawChordInformation(visualBoat, center) {
+        if (!informationChord) return;
+        const opacity = ctx.globalAlpha;
+        let previous = center;
+        informationChord.forEach((sample,index) => {
+          const key = 'chord.sample.'+index;
+          const point = { x: visualBoat.x+smoothInformation(key+'.x',sample.dx),
+            z: visualBoat.z+smoothInformation(key+'.z',sample.dz) };
+          const screen = screenFromWorld(point.x,point.z);
+          const color = informationSafetyColor(key+'.safety',sample.safe);
+          informationLine(previous,screen,color,true,1.3); informationDot(screen,color,2.5);
+          if (index%5 === 0) {
+            ctx.globalAlpha = opacity*.4; informationHull(point,color); ctx.globalAlpha = opacity;
+          }
+          previous = screen;
+        });
+      }
+      function drawContactInformation(visualBoat, center) {
+        const opacity = ctx.globalAlpha;
+        const colors = { blue: [117,190,255], packed: [78,201,176], ice: [184,217,234], ground: [244,135,113] };
+        for (const [id,tile] of informationContactTiles) {
+          const key = 'contacts.tile.'+id;
+          const visible = smoothInformation(key+'.opacity',tile.present ? 1 : 0,false,0);
+          if (visible <= 0 && !tile.present) {
+            informationContactTiles.delete(id);
+            for (const suffix of ['.opacity','.r','.g','.b']) informationAnimationValues.delete(key+suffix);
+            continue;
+          }
+          const channels = colors[tile.type].map((value,index) => smoothInformation(key+['.r','.g','.b'][index],value));
+          const color = `rgb(${channels.join(',')})`;
+          const points = [[0,0],[1,0],[1,1],[0,1]].map(([x,z]) => screenFromWorld(tile.x+x,tile.z+z));
+          ctx.beginPath(); points.forEach((point,index) => index
+            ? ctx.lineTo(point.x,point.y) : ctx.moveTo(point.x,point.y)); ctx.closePath();
+          ctx.fillStyle = color; ctx.globalAlpha = opacity*visible*.12; ctx.fill();
+          ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.globalAlpha = opacity*visible; ctx.stroke();
+        }
+        ctx.globalAlpha = opacity;
+        const count = Object.values(informationContactCounts).reduce((sum,value) => sum+value,0);
+        if (!count) return;
+        const fractions = Object.entries(informationContactCounts).map(([type,value]) => ({ type,
+          value: smoothInformation('contacts.mix.'+type,value/count) }));
+        const total = fractions.reduce((sum,item) => sum+item.value,0);
+        let start = -Math.PI/2;
+        for (const item of fractions) {
+          const end = start+Math.PI*2*item.value/total;
+          ctx.strokeStyle = `rgb(${colors[item.type].join(',')})`; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(center.x,center.y,17,start,end); ctx.stroke(); start = end;
+        }
+        ctx.strokeStyle = '#666666'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(center.x,center.y,22,0,Math.PI*2); ctx.stroke();
+        const retention = smoothInformation('contacts.retention',informationContactRetention);
+        ctx.strokeStyle = '#4ec9b0'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(center.x,center.y,22,-Math.PI/2,-Math.PI/2+Math.PI*2*retention); ctx.stroke();
+      }
+      function drawAccelerationInformation(visualBoat, center) {
+        if (!informationDynamics) return;
+        const { state,next } = informationDynamics;
+        const retainedX = state.vx*next.friction, retainedZ = state.vz*next.friction;
+        const oldX = smoothInformation('acceleration.velocity.x',state.vx);
+        const oldZ = smoothInformation('acceleration.velocity.z',state.vz);
+        const dragX = smoothInformation('acceleration.drag.x',retainedX-state.vx);
+        const dragZ = smoothInformation('acceleration.drag.z',retainedZ-state.vz);
+        const pushX = smoothInformation('acceleration.push.x',next.vx-retainedX);
+        const pushZ = smoothInformation('acceleration.push.z',next.vz-retainedZ);
+        const point = (x,z) => {
+          const world = screenFromWorld(visualBoat.x+x,visualBoat.z+z);
+          return { x: center.x+(world.x-center.x)/camera.scale*50,
+            y: center.y+(world.y-center.y)/camera.scale*50 };
+        };
+        const old = point(oldX,oldZ), retained = point(oldX+dragX,oldZ+dragZ);
+        const updated = point(oldX+dragX+pushX,oldZ+dragZ+pushZ);
+        drawArrow(center,old,'#fc6255',1.5);
+        ctx.setLineDash([3,3]); drawArrow(center,retained,'#858585',1.5); ctx.setLineDash([]);
+        drawArrow(old,retained,'#d19a66',2.2); drawArrow(retained,updated,'#98c379',2.2);
+        drawArrow(center,updated,'#58c4dd',1.7);
+        informationDot(old,'#fc6255',2.5); informationDot(retained,'#d19a66',2.5); informationDot(updated,'#58c4dd',2.5);
+      }
+      function drawCoastInformation(visualBoat, center) {
+        if (!informationCoastPrediction) return;
+        const { state,samples } = informationCoastPrediction;
+        const opacity = ctx.globalAlpha;
+        let previous = center, end = null;
+        samples.forEach((sample,index) => {
+          const key = 'coast.tick.'+index;
+          const point = { x: visualBoat.x+smoothInformation(key+'.x',sample.x-state.x),
+            z: visualBoat.z+smoothInformation(key+'.z',sample.z-state.z) };
+          const screen = screenFromWorld(point.x,point.z);
+          const color = informationSafetyColor(key+'.safety',sample.safe);
+          ctx.globalAlpha = opacity*(.8-.45*(index+1)/samples.length);
+          informationLine(previous,screen,'#7ec8c8',true,1.5); informationDot(screen,color,index%4 === 3 ? 3 : 1.5);
+          previous = screen; end = point;
+        });
+        ctx.globalAlpha = opacity;
+        if (end) {
+          informationHull(end,'#7ec8c8',1.3);
+          const yaw = smoothInformation('coast.endYaw',samples.at(-1).yaw,true)*Math.PI/180;
+          const tip = screenFromWorld(end.x-Math.sin(yaw)*1.1,end.z+Math.cos(yaw)*1.1);
+          drawArrow(previous,tip,'#7ec8c8',1.6);
+        }
+      }
+      function drawCumulativeInformation(visualBoat, center, solver) {
+        const samples = solver.turnThrust.samples ?? [];
+        const sign = Math.sign(solver.sideThrust);
+        const opacity = ctx.globalAlpha;
+        for (let index = 0; index < 28; index++) {
+          const sample = samples[index];
+          const key = 'cumulative.ray.'+index;
+          const visible = smoothInformation(key+'.opacity',sample ? 1 : 0,false,0);
+          if (visible <= 0) continue;
+          const angle = smoothInformation(key+'.yaw',(sample ?? samples.at(-1))?.yaw ?? solver.targetYaw,true)*Math.PI/180;
+          const tip = informationRay(visualBoat,-Math.sin(angle),Math.cos(angle),82+index*1.5);
+          const useful = smoothInformation(key+'.useful',(sample ?? samples.at(-1))?.side > 0 ? 1 : 0);
+          const color = `rgb(${244-63*useful},${135+71*useful},${113+55*useful})`;
+          ctx.globalAlpha = opacity*visible*(.15+.45*(index+1)/Math.max(samples.length,index+1));
+          drawArrow(center,tip,color,1); informationDot(tip,color,1.7);
+        }
+        ctx.globalAlpha = opacity;
+        const chart = informationChart(center,false,188,106);
+        const bottom = chart.y+chart.height-16;
+        const max = Math.max(solver.turnThrust.availableSide,solver.turnThrust.requiredSide,1e-8);
+        const ticks = Math.max(samples.length,1);
+        const height = chart.height-20;
+        const at = (index,key) => {
+          const sample = samples[Math.min(index-1,samples.length-1)];
+          const x = smoothInformation('cumulative.graph.'+index+'.x',sample ? sample.tick/ticks : 1);
+          const y = smoothInformation('cumulative.graph.'+index+'.'+key,sample ? sample[key]/max : 0);
+          return { x: chart.x+x*chart.width, y: bottom-y*height };
+        };
+        informationLine({ x:chart.x,y:chart.y },{ x:chart.x,y:bottom },'#555555');
+        informationLine({ x:chart.x,y:bottom },{ x:chart.x+chart.width,y:bottom },'#555555');
+        for (const [key,color] of [['availableSide','#b5cea8'],['requiredSide','#ce9178']]) {
+          let previous = { x: chart.x, y: bottom };
+          for (let index = 1; index <= 28; index++) {
+            const next = at(index,key);
+            informationLine(previous,{ x:next.x,y:previous.y },color,false,1.7);
+            informationLine({ x:next.x,y:previous.y },next,color,false,1.7);
+            previous = next;
+          }
+          if (samples.length || informationMoving) informationDot(previous,color,3);
+        }
+        ctx.fillStyle = '#353535'; ctx.fillRect(chart.x,bottom+8,chart.width,6);
+        ctx.fillStyle = '#58c4dd'; ctx.fillRect(chart.x,bottom+8,chart.width*smoothInformation('cumulative.duty',solver.duty),6);
+        const rawDuty = smoothInformation('cumulative.rawDuty',solver.turnThrust.duty);
+        informationLine({ x:chart.x+rawDuty*chart.width,y:bottom+5 },{ x:chart.x+rawDuty*chart.width,y:bottom+17 },'#b5cea8',false,2);
+        const normalX = smoothInformation('cumulative.normal.x',solver.nx*sign);
+        const normalZ = smoothInformation('cumulative.normal.z',solver.nz*sign);
+        if (Math.hypot(normalX,normalZ) > 1e-8) {
+          const normal = informationRay(visualBoat,normalX,normalZ,48*Math.hypot(normalX,normalZ));
+          ctx.setLineDash([3,3]); drawArrow(center,normal,'#b5cea8',1); ctx.setLineDash([]);
+        }
+      }
+      function drawSearchInformation(center, solver) {
+        const evaluations = solver.evaluations ?? [];
+        if (!evaluations.length) return;
+        const chart = informationChart(center,true,188,130);
+        const span = Math.max(solver.parallelLimit,1e-8);
+        const costs = evaluations.map(value => value.cost);
+        const minCost = Math.min(...costs), maxCost = Math.max(...costs);
+        const range = Math.max(maxCost-minCost,1e-12);
+        const opacity = ctx.globalAlpha;
+        const atX = value => chart.x+(value+1)/2*chart.width;
+        const atY = value => chart.y+52-value*46;
+        informationLine({ x:chart.x,y:chart.y+54 },{ x:chart.x+chart.width,y:chart.y+54 },'#555555');
+        informationLine({ x:atX(0),y:chart.y },{ x:atX(0),y:chart.y+54 },'#555555',true);
+        for (let index = 0; index < 35; index++) {
+          const key = 'search.candidate.'+index;
+          const value = evaluations[index] ?? solver.bestW;
+          const visible = smoothInformation(key+'.opacity',evaluations[index] ? 1 : 0,false,0);
+          const x = smoothInformation(key+'.x',value.parallel/span);
+          const y = smoothInformation(key+'.y',(value.cost-minCost)/range);
+          ctx.globalAlpha = opacity*visible*(.22+.78*(index+1)/Math.max(evaluations.length,index+1));
+          informationDot({ x:atX(x),y:atY(y) },'#d7ba7d',2.2);
+        }
+        ctx.globalAlpha = opacity;
+        const best = { x:atX(smoothInformation('search.best.x',solver.bestW.parallel/span)),
+          y:atY(smoothInformation('search.best.y',(solver.bestW.cost-minCost)/range)) };
+        ctx.strokeStyle = '#c586c0'; ctx.fillStyle = '#c586c0'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(best.x,best.y-5); ctx.lineTo(best.x+5,best.y);
+        ctx.lineTo(best.x,best.y+5); ctx.lineTo(best.x-5,best.y); ctx.closePath();
+        ctx.stroke();
+        ctx.globalAlpha = opacity*smoothInformation('search.useW',solver.useW ? 1 : 0);
+        ctx.fill();
+        for (const branch of [-1,1]) {
+          for (let iteration = 0; iteration <= 14; iteration++) {
+            const interval = solver.searchRanges?.find(value => value.branch === branch && value.iteration === iteration);
+            const key = 'search.range.'+branch+'.'+iteration;
+            const visible = smoothInformation(key+'.opacity',interval ? 1 : 0,false,0);
+            const left = smoothInformation(key+'.left',(interval?.left ?? solver.bestW.parallel)/span);
+            const right = smoothInformation(key+'.right',(interval?.right ?? solver.bestW.parallel)/span);
+            const y = chart.y+65+(branch > 0 ? 24 : 0)+iteration*1.3;
+            ctx.globalAlpha = opacity*visible*(.22+.78*(iteration+1)/15);
+            informationLine({ x:atX(left),y },{ x:atX(right),y },'#d7ba7d',false,1);
+          }
+        }
+        ctx.globalAlpha = opacity;
+      }
+      function drawRotationInformation(visualBoat, center, solver) {
+        let yaw = solver.state.yaw, omega = solver.state.omega;
+        let releasedYaw = yaw, releasedOmega = omega;
+        const opacity = ctx.globalAlpha;
+        const point = (angle,length) => informationRay(visualBoat,-Math.sin(angle*Math.PI/180),Math.cos(angle*Math.PI/180),length);
+        let previous = point(smoothInformation('rotation.start',yaw,true),112);
+        let releasedPrevious = point(smoothInformation('rotation.releasedStart',yaw,true),126);
+        const count = solver.turnThrust.ticks || 28;
+        for (let tick = 0; tick < 28; tick++) {
+          if (tick < count) {
+            const recorded = solver.turnThrust.samples?.[tick];
+            if (recorded) { yaw = recorded.yaw; omega = recorded.omega; }
+            else {
+              const action = steeringAction(yaw,omega,solver.targetYaw,solver.referenceOmega,solver.friction,solver.narrowRoom);
+              omega = Math.fround(Math.fround(omega)*solver.friction);
+              if (action.turn) omega = Math.fround(omega+action.turn);
+              yaw = Math.fround(Math.fround(yaw)+omega);
+            }
+            releasedOmega = Math.fround(Math.fround(releasedOmega)*solver.friction);
+            releasedYaw = Math.fround(Math.fround(releasedYaw)+releasedOmega);
+          }
+          const key = 'rotation.tick.'+tick;
+          const visible = smoothInformation(key+'.opacity',tick < count ? 1 : 0,false,0);
+          const next = point(smoothInformation(key+'.yaw',yaw,true),112);
+          const released = point(smoothInformation(key+'.releasedYaw',releasedYaw,true),126);
+          ctx.globalAlpha = opacity*visible*(.25+.75*(tick+1)/Math.max(count,tick+1));
+          informationLine(previous,next,'#9cdcfe',false,1.5); informationDot(next,'#9cdcfe',2);
+          informationLine(releasedPrevious,released,'#858585',true,1);
+          previous = next; releasedPrevious = released;
+        }
+        ctx.globalAlpha = opacity;
+        const end = point(smoothInformation('rotation.end',yaw,true),112);
+        const releasedEnd = point(smoothInformation('rotation.releasedEnd',releasedYaw,true),126);
+        ctx.setLineDash([4,4]); drawArrow(center,end,'#9cdcfe',1.5); ctx.setLineDash([]);
+        informationDot(releasedEnd,'#858585',3);
+      }
+      function drawCursor() {
+        if (mode === 'drive') return;
+        if (!pointer || drag?.kind === 'pan') return;
+        if (tool !== 'paint' && tool !== 'erase') return;
+        const p = screenFromWorld(pointer.x,pointer.z);
+        const width = brushWidth();
+        ctx.strokeStyle = tool === 'erase' ? '#f48771' : '#b8d9ea';
+        ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+        ctx.beginPath(); ctx.arc(p.x,p.y,width*camera.scale/2,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+      }
+      function updateMetrics(visualBoat, projection) {
+        const speed = Math.hypot(boat.vx,boat.vz);
+        const heading = Math.atan2(-boat.vx,boat.vz) * 180 / Math.PI;
+        const slip = speed < 1e-8 ? 0 : ((heading - boat.yaw + 540) % 360 + 360) % 360 - 180;
+        $('m-tick').textContent = (boat.tick + subtickPhase / SUBTICKS_PER_TICK).toFixed(1);
+        $('m-pos').textContent = `${boat.x.toFixed(2)} / ${boat.z.toFixed(2)}`;
+        $('m-speed').textContent = speed.toFixed(3);
+        $('m-slip').textContent = `${slip.toFixed(1)}°`;
+        $('m-yaw').textContent = `${(((boat.yaw % 360)+360)%360).toFixed(1)}°`;
+        $('m-omega').textContent = `${boat.omega.toFixed(2)}°/t`;
+        $('m-friction').textContent = physics.frictionAt(boat.x,boat.z,terrainAt).toFixed(3);
+        $('m-input').textContent = ['w','a','s','d'].filter(k => lastKeys[k]).map(k => k.toUpperCase()).join('+') || '—';
+        const p = projection;
+        $('m-route-progress').textContent = p ? `${p.s.toFixed(1)} / ${routeLength.toFixed(1)}` : '—';
+        $('m-route-error').textContent = p ? p.distance.toFixed(2) : '—';
+        $('m-route-demand').textContent = inputMode === 'auto' ? autoLastDemand.toFixed(2) : '—';
+        $('m-route-heading').textContent = inputMode === 'auto' ? `${(((autoDebug.targetYaw % 360)+360)%360).toFixed(1)}°` : '—';
+      }
+      function interpolatedBoat() {
+        if (!playing) return boat;
+        const previewKeys = inputMode === 'auto' ? autoKeys : inputMode === 'sequence'
+          ? (sequence[sequenceIndex] ?? lastKeys)
+          : manualKeys();
+        const predicted = physics.step(boat, previewKeys, terrainAt);
+        const t = clamp((subtickPhase + accumulator) / SUBTICKS_PER_TICK,0,1);
+        const mix = (a,b) => a + (b-a)*t;
+        return { x: mix(boat.x,predicted.x), z: mix(boat.z,predicted.z), vx: mix(boat.vx,predicted.vx), vz: mix(boat.vz,predicted.vz), yaw: mix(boat.yaw,predicted.yaw) };
+      }
+      function updateCamera(visualBoat, dt) {
+        if (mode !== 'drive' && !(follow && playing)) return false;
+        const heading = visualBoat.yaw * Math.PI/180;
+        const ahead = mode === 'drive' ? 3 : 0;
+        const targetX = visualBoat.x - Math.sin(heading)*ahead;
+        const targetZ = visualBoat.z + Math.cos(heading)*ahead;
+        const alpha = 1 - Math.exp(-dt*8);
+        camera.x += (targetX-camera.x)*alpha;
+        camera.z += (targetZ-camera.z)*alpha;
+        camera.rotation = mode === 'drive' ? Math.PI-heading : 0;
+        return Math.hypot(targetX-camera.x,targetZ-camera.z) > .001;
+      }
+      function draw(visualBoat) {
+        const projection = routeProjection(visualBoat.x, visualBoat.z, autoProgress);
+        const target = inputMode === 'auto' ? routeAt(autoVisualTargetProgress) : routeLookahead(projection, visualBoat);
+        ctx.clearRect(0,0,innerWidth,innerHeight);
+        ctx.fillStyle = '#1e1e1e'; ctx.fillRect(0,0,innerWidth,innerHeight);
+        drawGrid(); drawTrace(visualBoat); drawCurves();
+        drawRoutes(target);
+        drawInformation(visualBoat,projection,target);
+        drawBoat(visualBoat); drawCursor(); updateMetrics(visualBoat, projection);
+      }
+      function invalidate() { if (!frameId) frameId = requestAnimationFrame(frame); }
+      function frame(time) {
+        frameId = 0;
+        const informationGap = informationAnimationTime ? (time-informationAnimationTime)/1000 : 0;
+        informationAnimationDt = informationGap <= .1 ? Math.max(0,informationGap) : 0;
+        informationAnimationTime = time;
+        informationMoving = false;
+        informationAnimationUpdated.clear();
+        const dt = lastVisualFrame ? Math.min((time-lastVisualFrame)/1000,.1) : 0;
+        lastVisualFrame = time;
+        if (playing) {
+          if (lastFrame) {
+            const elapsedMs = Math.max(0,Math.min(time-lastFrame,200));
+            const frameStart = time-elapsedMs;
+            const rate = Number($('rate').value);
+            const carry = accumulator;
+            accumulator += elapsedMs * rate / 10;
+            let steps = 0;
+            while (playing && accumulator >= 1 && steps < 200) {
+              const boundaryTime = frameStart + (steps + 1 - carry) * 10 / rate;
+              accumulator--;
+              advanceSubtick(boundaryTime);
+              steps++;
+            }
+          }
+          lastFrame = time;
+        }
+        const visualBoat = interpolatedBoat();
+        const cameraMoving = updateCamera(visualBoat,dt);
+        if (inputMode === 'auto') {
+          const remaining = autoTargetProgress-autoVisualTargetProgress;
+          autoVisualTargetProgress += Math.max(0,remaining)*(1-Math.exp(-dt*16));
+          if (autoTargetProgress-autoVisualTargetProgress < .005) autoVisualTargetProgress = autoTargetProgress;
+        } else autoVisualTargetProgress = autoTargetProgress;
+        draw(visualBoat);
+        let timelineMoving = false;
+        if (!$('sequence-panel').hidden) {
+          const difference = timelineTargetPixelsPerTick - timelinePixelsPerTick;
+          if (Math.abs(difference) > .01) {
+            timelinePixelsPerTick += difference * (1 - Math.exp(-dt * 15));
+            timelineMoving = true;
+          } else timelinePixelsPerTick = timelineTargetPixelsPerTick;
+          if (timelineFollowing && inputMode === 'sequence') {
+            timelineCenterUnits = clamp(sequenceElapsedUnits + (playing ? accumulator : 0), 0, timelineTotalUnits);
+          }
+          drawTimeline();
+        }
+        if (playing || cameraMoving || timelineMoving || informationMoving || autoTargetProgress-autoVisualTargetProgress > .005) invalidate();
+      }
+      function onKey(event, down) {
+        if (event.code === 'F1') {
+          event.preventDefault();
+          if (down && !event.repeat) toggleUiVisibility();
+          return;
+        }
+        const editing = ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
+        if (editing && down) return;
+        const code = event.code;
+        const key = ({ KeyW:'w', KeyA:'a', KeyS:'s', KeyD:'d' })[code];
+        if (key) {
+          event.preventDefault();
+          const changed = downKeys.has(key) !== down;
+          if (down) downKeys.add(key); else downKeys.delete(key);
+          if (changed && playing && inputMode === 'manual') keyEvents.push({ time: performance.now(), key, down });
+          updateDriveKeys();
+          if (inputMode === 'manual') { lastKeys = manualKeys(); invalidate(); }
+          return;
+        }
+        if (!down) return;
+        if (code === 'Space') { event.preventDefault(); if (inputMode !== 'auto') inputMode = 'manual'; setPlaying(!playing); }
+        else if (mode === 'drive' && code === 'KeyR') { event.preventDefault(); recording ? (recording = false, renderSequence(), updateButtons()) : beginRecording(); }
+        else if (code === 'Escape') { if (mode === 'drive') setMode('edit'); else { penCurve = null; penRoute = tool === 'route' ? resumeRoutePen() : null; selectedCurveId = null; selectedRouteId = null; updateButtons(); invalidate(); } }
+        else if (mode === 'edit' && (event.ctrlKey || event.metaKey) && code === 'KeyZ') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
+        else if (mode === 'edit' && (event.ctrlKey || event.metaKey) && code === 'KeyY') { event.preventDefault(); redo(); }
+        else if (mode === 'edit' && code === 'Delete' && selectedCurveId !== null) {
+          saveHistory(); curves = curves.filter(c => c.id !== selectedCurveId); selectedCurveId = null; rebuildCurves();
+        }
+        else if (mode === 'edit' && code === 'Delete' && selectedRouteId !== null) {
+          saveHistory(); removeRoute(selectedRouteId);
+        }
+      }
+
+      canvas.addEventListener('pointerdown', onPointerDown);
+      canvas.addEventListener('pointermove', onPointerMove);
+      canvas.addEventListener('pointerup', onPointerUp);
+      canvas.addEventListener('pointercancel', onPointerUp);
+      canvas.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); });
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+      canvas.addEventListener('wheel', event => {
+        event.preventDefault();
+        const anchor = worldFromScreen(event.clientX,event.clientY);
+        const nextScale = camera.scale * Math.exp(-event.deltaY*.001);
+        if (!Number.isFinite(nextScale) || nextScale <= 0) return;
+        camera.scale = nextScale;
+        const dx = (event.clientX-innerWidth/2)/camera.scale;
+        const dy = (event.clientY-innerHeight/2)/camera.scale;
+        const c = Math.cos(camera.rotation), s = Math.sin(camera.rotation);
+        camera.x = anchor.x - dx*c - dy*s;
+        camera.z = anchor.z + dx*s - dy*c;
+        invalidate();
+      }, { passive: false });
+      const sequenceTimeline = $('sequence-timeline');
+      sequenceTimeline.addEventListener('wheel', event => {
+        event.preventDefault();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? sequenceTimeline.clientHeight : 1);
+        timelineTargetPixelsPerTick = clamp(timelineTargetPixelsPerTick * Math.exp(-delta * .0012), 2, 160);
+        invalidate();
+      }, { passive: false });
+      sequenceTimeline.addEventListener('pointerdown', event => {
+        if (event.button !== 0 && event.button !== 1) return;
+        timelineDrag = { id: event.pointerId, startY: event.clientY, center: timelineCenterUnits, moved: false };
+        sequenceTimeline.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      sequenceTimeline.addEventListener('pointermove', event => {
+        if (!timelineDrag || event.pointerId !== timelineDrag.id) return;
+        const distance = event.clientY - timelineDrag.startY;
+        if (!timelineDrag.moved && Math.abs(distance) > 3) {
+          timelineDrag.moved = true;
+          if (inputMode === 'sequence' && playing) setPlaying(false);
+          timelineFollowing = false;
+          sequenceTimeline.classList.add('dragging');
+        }
+        if (timelineDrag.moved) {
+          timelineCenterUnits = clamp(timelineDrag.center - distance * SUBTICKS_PER_TICK / timelinePixelsPerTick, 0, timelineTotalUnits);
+          drawTimeline();
+          invalidate();
+        }
+      });
+      const finishTimelineDrag = event => {
+        if (!timelineDrag || event.pointerId !== timelineDrag.id) return;
+        if (!timelineDrag.moved && event.type === 'pointerup') {
+          const box = sequenceTimeline.getBoundingClientRect();
+          const units = timelineCenterUnits + (event.clientY - box.top - box.height / 2) * SUBTICKS_PER_TICK / timelinePixelsPerTick;
+          selectedSequenceIndex = rowIndexAt(clamp(units, 0, timelineTotalUnits));
+          renderSequenceEditor();
+          drawTimeline();
+        }
+        sequenceTimeline.classList.remove('dragging');
+        if (sequenceTimeline.hasPointerCapture(event.pointerId)) sequenceTimeline.releasePointerCapture(event.pointerId);
+        timelineDrag = null;
+      };
+      sequenceTimeline.addEventListener('pointerup', finishTimelineDrag);
+      sequenceTimeline.addEventListener('pointercancel', finishTimelineDrag);
+      sequenceTimeline.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
+      window.addEventListener('keydown', e => onKey(e,true));
+      window.addEventListener('keyup', e => onKey(e,false));
+      window.addEventListener('blur', () => {
+        if (playing && inputMode === 'manual') for (const key of downKeys) keyEvents.push({ time: performance.now(), key, down: false });
+        downKeys.clear(); updateDriveKeys(); if (inputMode === 'manual') lastKeys = EMPTY_KEYS; invalidate();
+      });
+      window.addEventListener('resize', () => {
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        canvas.width = Math.round(innerWidth*dpr); canvas.height = Math.round(innerHeight*dpr);
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+        positionInformationPanel();
+        invalidate();
+      });
+      $('information-toggle').addEventListener('click', () => {
+        information.enabled = !information.enabled;
+        solverVisualization = null;
+        updateInformationControls();
+      });
+      for (const input of document.querySelectorAll('[data-information]')) input.addEventListener('change', () => {
+        information.layers[input.dataset.information] = input.checked;
+        solverVisualization = null;
+        invalidate();
+      });
+      for (const button of document.querySelectorAll('[data-tool]')) button.addEventListener('click', () => setTool(button.dataset.tool));
+      $('mode-toggle').addEventListener('click', () => setMode(mode === 'drive' ? 'edit' : 'drive'));
+      $('record-toggle').addEventListener('click', () => { if (recording) { recording = false; renderSequence(); updateButtons(); } else beginRecording(); });
+      $('undo').addEventListener('click', undo);
+      $('redo').addEventListener('click', redo);
+      $('clear').addEventListener('click', () => { saveHistory(); tiles.clear(); curves = []; selectedCurveId = null; penCurve = null; rebuildCurves(); });
+      $('play').addEventListener('click', () => { if (inputMode !== 'auto') inputMode = 'manual'; setPlaying(!playing); });
+      $('step').addEventListener('click', () => { setPlaying(false); advanceSubtick(performance.now()); });
+      $('reset').addEventListener('click', () => { setPlaying(false); recording = false; inputMode = 'manual'; livePath = null; resetBoat(); renderSequence(); if (mode === 'drive') { beginRecording(); setPlaying(true); } });
+      $('auto-run').addEventListener('click', runAuto);
+      $('route-calculate').addEventListener('click', () => {
+        if (livePath) {
+          livePath = null;
+          recording = false;
+          if (playing) setPlaying(false);
+          else updateButtons();
+          showToast('已停止自动路径');
+          return;
+        }
+        try { startLivePath(); }
+        catch (error) { showToast(error.message || '路径生成失败'); }
+      });
+      $('route-clear').addEventListener('click', () => { if (!routes.length) return; saveHistory(); routes = []; selectedRouteId = null; penRoute = null; autoProgress = 0; rebuildRoute(); });
+      $('follow').addEventListener('click', () => { follow = !follow; updateButtons(); });
+      $('center').addEventListener('click', () => { const yaw = boat.yaw*Math.PI/180; camera.x = boat.x - (mode === 'drive' ? Math.sin(yaw)*3 : 0); camera.z = boat.z + (mode === 'drive' ? Math.cos(yaw)*3 : 0); invalidate(); });
+      $('rate').addEventListener('change', () => { if (mode === 'drive') $('rate').blur(); });
+      $('width').addEventListener('change', () => { $('width').value = String(brushWidth()); invalidate(); });
+      $('sequence-toggle').addEventListener('click', () => {
+        $('sequence-panel').hidden = !$('sequence-panel').hidden;
+        $('sequence-toggle').setAttribute('aria-expanded', String(!$('sequence-panel').hidden));
+        updateSequenceHighlight();
+        invalidate();
+      });
+      $('sequence-close').addEventListener('click', () => { $('sequence-panel').hidden = true; $('sequence-toggle').setAttribute('aria-expanded','false'); });
+      $('sequence-add').addEventListener('click', () => {
+        if (sequence.length >= MAX_SEQUENCE_ROWS) return;
+        const end = timelineTotalUnits;
+        editSequence(() => sequence.push({ units: 200, w: false, a: false, s: false, d: false }), end);
+        timelineCenterUnits = end;
+        drawTimeline();
+      });
+      $('sequence-duration').addEventListener('change', event => {
+        const index = selectedSequenceIndex;
+        if (index < 0) return;
+        const units = clamp(Math.round(Number(event.target.value) * SUBTICKS_PER_TICK) || sequence[index].units, 1, MAX_ROW_UNITS);
+        if (units === sequence[index].units) { renderSequenceEditor(); return; }
+        editSequence(() => { sequence[index].units = units; }, timelineRows[index].start);
+      });
+      for (const button of document.querySelectorAll('[data-sequence-key]')) button.addEventListener('click', () => {
+        const index = selectedSequenceIndex;
+        if (index < 0) return;
+        const key = button.dataset.sequenceKey;
+        editSequence(() => { sequence[index][key] = !sequence[index][key]; }, timelineRows[index].start);
+      });
+      $('sequence-remove').addEventListener('click', () => {
+        const index = selectedSequenceIndex;
+        if (index < 0) return;
+        editSequence(() => { sequence.splice(index, 1); }, timelineRows[index].start);
+      });
+      $('sequence-run').addEventListener('click', runSequence);
+      $('export').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(serialize(), null, 2)], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a'); link.href = url; link.download = 'ice-field.json'; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('JSON 已导出');
+      });
+      $('import').addEventListener('click', () => $('file').click());
+      $('file').addEventListener('change', async event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try { loadData(JSON.parse(await file.text())); showToast('JSON 已导入'); }
+        catch (error) { showToast(error.message || '导入失败'); }
+        event.target.value = '';
+      });
+      globalThis.iceBoatLab = Object.freeze({
+        getState: () => copy(boat),
+        getInformation: () => {
+          if (information.enabled) currentSolverVisualization();
+          return { ...copy(information), solver: information.enabled && inputMode === 'auto' ? copy(solverVisualization) : null };
+        },
+        getView: () => { const projection = routeProjection(boat.x,boat.z,autoProgress); const p = inputMode === 'auto' ? routeAt(autoTargetProgress) : routeLookahead(projection,boat); return { mode, playing, recording, inputMode, clock: boat.tick + subtickPhase / SUBTICKS_PER_TICK, subtickPhase, camera: copy(camera), displayBoat: copy(interpolatedBoat()), route: { length: routeLength, progress: autoProgress, targetProgress: autoTargetProgress, projection: copy(projection), p: copy(p), displayP: copy(inputMode === 'auto' ? routeAt(autoVisualTargetProgress) : p), maxError: autoMaxError, demand: autoLastDemand, ticks: autoTicks, debug: copy(autoDebug) } }; },
+         autoTick: () => { if (inputMode !== 'auto' || !playing) return copy(boat); for (let unit = 0; unit < SUBTICKS_PER_TICK && playing; unit++) advanceSubtick(performance.now()); return copy(boat); },
+        step: keys => { previousBoat = { ...boat }; boat = physics.step(boat, { ...EMPTY_KEYS, ...keys }, terrainAt); subtickPhase = 0; accumulator = 0; trace.push({ x:boat.x, z:boat.z }); lastKeys = { ...EMPTY_KEYS, ...keys }; autoProgress = routeProjection(boat.x,boat.z,autoProgress)?.s ?? 0; invalidate(); return copy(boat); },
+        sampleRoute: distance => copy(routeAt(distance)),
+        projectRoute: (x,z) => copy(routeProjection(x,z,autoProgress)),
+        hullOnIce,
+        demoCenterline,
+        terrainAt,
+        exportData: serialize,
+        importData: loadData
+      });
+      resetBoat();
+      renderSequence();
+      updateButtons();
+      window.dispatchEvent(new Event('resize'));
+    })();
+  </script>
+</body>
+</html>
