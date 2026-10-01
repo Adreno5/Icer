@@ -1,7 +1,8 @@
 # Icer
 
-**Icer** is the collection repository for a Minecraft 26.2 ice-boat autopilot: the mod implementation,
-the portable algorithm engineering knowledge around it, and a browser sandbox for the same controller.
+**Icer** is the Minecraft 26.2 ice-boat autopilot controller.
+This repository contains the mod implementation, the portable algorithm engineering knowledge around it,
+and a browser sandbox for the same controller.
 
 Ice boats have no lateral grip — every turn is a drift. Icer is built around that fact instead of a
 "car with a steering angle" model: a local cubic Bezier centre line through ice that supports the whole
